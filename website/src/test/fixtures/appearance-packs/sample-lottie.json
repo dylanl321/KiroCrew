@@ -1,0 +1,31 @@
+{
+  "kind": "crew-companion-pack",
+  "version": 1,
+  "id": "sample-lottie",
+  "manifest": {
+    "meta": {
+      "id": "sample-lottie",
+      "name": "Sample Lottie",
+      "author": "Kiro Crew fixtures",
+      "description": "A lottie test pack for the crew appearance library.",
+      "type": "custom",
+      "format": "lottie",
+      "thumbnail": ""
+    },
+    "states": {
+      "idle": "idle.json",
+      "working": "working.json",
+      "done": "done.json"
+    },
+    "moods": {},
+    "sounds": {
+      "done": "done.wav"
+    }
+  },
+  "files": {
+    "idle.json": "{\"v\": \"5.7.4\", \"fr\": 24, \"ip\": 0, \"op\": 48, \"w\": 64, \"h\": 64, \"nm\": \"idle\", \"ddd\": 0, \"assets\": [], \"markers\": [], \"layers\": [{\"ddd\": 0, \"ind\": 1, \"ty\": 4, \"nm\": \"body\", \"sr\": 1, \"ks\": {\"o\": {\"a\": 0, \"k\": 100}, \"r\": {\"a\": 1, \"k\": [{\"t\": 0, \"s\": [0], \"e\": [360], \"i\": {\"x\": [0.5], \"y\": [1]}, \"o\": {\"x\": [0.5], \"y\": [0]}}, {\"t\": 48, \"s\": [360]}]}, \"p\": {\"a\": 0, \"k\": [32, 32, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100, 100]}}, \"ao\": 0, \"ip\": 0, \"op\": 48, \"st\": 0, \"bm\": 0, \"shapes\": [{\"ty\": \"gr\", \"nm\": \"group\", \"it\": [{\"ty\": \"rc\", \"d\": 1, \"s\": {\"a\": 0, \"k\": [34, 34]}, \"p\": {\"a\": 0, \"k\": [0, 0]}, \"r\": {\"a\": 0, \"k\": 9}, \"nm\": \"rect\"}, {\"ty\": \"fl\", \"c\": {\"a\": 0, \"k\": [0.43, 0.36, 0.91, 1]}, \"o\": {\"a\": 0, \"k\": 100}, \"r\": 1, \"nm\": \"fill\"}, {\"ty\": \"tr\", \"p\": {\"a\": 0, \"k\": [0, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100]}, \"r\": {\"a\": 0, \"k\": 0}, \"o\": {\"a\": 0, \"k\": 100}, \"nm\": \"transform\"}]}]}]}",
+    "working.json": "{\"v\": \"5.7.4\", \"fr\": 24, \"ip\": 0, \"op\": 48, \"w\": 64, \"h\": 64, \"nm\": \"working\", \"ddd\": 0, \"assets\": [], \"markers\": [], \"layers\": [{\"ddd\": 0, \"ind\": 1, \"ty\": 4, \"nm\": \"body\", \"sr\": 1, \"ks\": {\"o\": {\"a\": 0, \"k\": 100}, \"r\": {\"a\": 1, \"k\": [{\"t\": 0, \"s\": [0], \"e\": [360], \"i\": {\"x\": [0.5], \"y\": [1]}, \"o\": {\"x\": [0.5], \"y\": [0]}}, {\"t\": 48, \"s\": [360]}]}, \"p\": {\"a\": 0, \"k\": [32, 32, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100, 100]}}, \"ao\": 0, \"ip\": 0, \"op\": 48, \"st\": 0, \"bm\": 0, \"shapes\": [{\"ty\": \"gr\", \"nm\": \"group\", \"it\": [{\"ty\": \"rc\", \"d\": 1, \"s\": {\"a\": 0, \"k\": [34, 34]}, \"p\": {\"a\": 0, \"k\": [0, 0]}, \"r\": {\"a\": 0, \"k\": 9}, \"nm\": \"rect\"}, {\"ty\": \"fl\", \"c\": {\"a\": 0, \"k\": [0.12, 0.62, 0.42, 1]}, \"o\": {\"a\": 0, \"k\": 100}, \"r\": 1, \"nm\": \"fill\"}, {\"ty\": \"tr\", \"p\": {\"a\": 0, \"k\": [0, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100]}, \"r\": {\"a\": 0, \"k\": 0}, \"o\": {\"a\": 0, \"k\": 100}, \"nm\": \"transform\"}]}]}]}",
+    "done.json": "{\"v\": \"5.7.4\", \"fr\": 24, \"ip\": 0, \"op\": 48, \"w\": 64, \"h\": 64, \"nm\": \"done\", \"ddd\": 0, \"assets\": [], \"markers\": [], \"layers\": [{\"ddd\": 0, \"ind\": 1, \"ty\": 4, \"nm\": \"body\", \"sr\": 1, \"ks\": {\"o\": {\"a\": 0, \"k\": 100}, \"r\": {\"a\": 1, \"k\": [{\"t\": 0, \"s\": [0], \"e\": [360], \"i\": {\"x\": [0.5], \"y\": [1]}, \"o\": {\"x\": [0.5], \"y\": [0]}}, {\"t\": 48, \"s\": [360]}]}, \"p\": {\"a\": 0, \"k\": [32, 32, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100, 100]}}, \"ao\": 0, \"ip\": 0, \"op\": 48, \"st\": 0, \"bm\": 0, \"shapes\": [{\"ty\": \"gr\", \"nm\": \"group\", \"it\": [{\"ty\": \"rc\", \"d\": 1, \"s\": {\"a\": 0, \"k\": [34, 34]}, \"p\": {\"a\": 0, \"k\": [0, 0]}, \"r\": {\"a\": 0, \"k\": 9}, \"nm\": \"rect\"}, {\"ty\": \"fl\", \"c\": {\"a\": 0, \"k\": [0.79, 0.46, 0.1, 1]}, \"o\": {\"a\": 0, \"k\": 100}, \"r\": 1, \"nm\": \"fill\"}, {\"ty\": \"tr\", \"p\": {\"a\": 0, \"k\": [0, 0]}, \"a\": {\"a\": 0, \"k\": [0, 0]}, \"s\": {\"a\": 0, \"k\": [100, 100]}, \"r\": {\"a\": 0, \"k\": 0}, \"o\": {\"a\": 0, \"k\": 100}, \"nm\": \"transform\"}]}]}]}",
+    "done.wav": "UklGRqgDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YYQDAACAv+HXpGEsHjx5ud7YqWcxHzlzs9rYrW43ITdurdbYsXQ8IzVpp9LYtXpBJjNkoc7XuH9HKTJfm8nWu4VNLDFblcXVvopSLzFXj8DTwI9YMzFUirvRwZRdNzJQhbbOwphjOzNOgLHLw5xoPzRLe6zIw59tQzVKdqfFw6NySDdIcqLCw6V3TDlHbp2+wqh7UTxGa5i7waqAVT5GZ5S3wKyEWkFGZI+zvq2HXkRGYouvva6LYkhGX4eruq+OZ0tHXoOnuLCRa05IXICjtrCUb1JKW3yfs6+WclVMWnmbsK+YdllOWXaXra6aeVxQWXSUqq2bfWBSWXGQp6ycf2NUWW+NpKqdgmdXWm6KoaidhWpZW2yHnqadh21cXGuEm6SdiXBfXWuCmKKdinNiXmp/laCci3ZkYGp+kp2bjHhnYmp8j5uajXpqZGp6jZmZjnxtZmt5ipaXjn5vaGx4iJSWjoBxam14hpGUjYF0bG53hI+SjYJ2b293g42QjIN4cXF3gYqOi4N6c3J4gIiMioN7dXR4gIaKiYN8d3Z5f4WIh4N+eXh6f4OGhYJ+e3p7f4KEhIJ/fXx9f4GCgoF/fn5+f4CAgICX29aNOh1Ppt/MfDAjX7Tgv2wpKm/A3rFdJTR/ytqiTyNAj9HTkkMkTZ7WyYM6KFyr2L5zMi9rt9eyZS43esHUpFgrQYjIzpZNLE2WzcaIQy9ao8+9ejw0Z67Psmw3O3W3zaZgNESCv8mZVTNOj8TCjEw1WZvHun9FOWWmyLFzQD9xr8amaDxHfrbDm107T4m7vY9VPFmUvreETj9knsCueEhEb6a/pW5FSnqtvJtlRFKEsriRXURajrayh1ZGZJe3q31RSm2ft6R0TU93pbWba0xVgKqykmRMXYmtrYleTWSRr6iBWVBtmK+heFZUdZ6umnFUWn2irJJqVGCFpaiLZVVmjKejg2FXbZKnnnxeWnSXp5h2XF57m6WRcFxjgZ2ii2xcaYefnoVoXm+MoJl/ZWF0kJ+UemRkepSdj3VjaH+Wm4pxZGyEl5iFbmVxiJiUgWxndYuXkX1ranqOlo15a21+j5SJdmxxgZCShXRtdISQj4Jzb3iGkIx/cnF7iI6JfHNzfYmNhnpzdoCJi4N5dHiCiYmBeXZ7g4iGgHl4fYOHhH56en6DhYN+e3t/g4SBfnx9gIKCgH5+foCBgIB/f38="
+  }
+}

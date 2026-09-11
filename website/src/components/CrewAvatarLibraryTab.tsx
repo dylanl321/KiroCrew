@@ -21,16 +21,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, FileQuestion, Trash2, Upload } from 'lucide-react'
+import { Check, Trash2, Upload } from 'lucide-react'
 import { Btn } from './ui'
 import CrewAvatar from './CrewAvatar'
+import PackAvatar from './appearancePacks/PackAvatar'
+import { invalidatePackDetail } from '../lib/appearancePacks/detailCache'
 import ErrorNotice from './ErrorNotice'
 import { api } from '../api/client'
 import {
   BUILTIN_PACK_ID,
   MAX_BUNDLE_BYTES,
   bundleFromText,
-  isWearableFormat,
   packSlotUrl,
   packSummariesFrom,
   type AppearancePackSummary,
@@ -208,14 +209,14 @@ export default function CrewAvatarLibraryTab({
       const result = await api.appearances.importBundle(parsed.bundle)
       const rows = await load()
       // Select what was just installed — an import whose only visible effect is
-      // one more card reads as having done nothing to this crew — but ONLY when
-      // a crew can wear it. The server accepts a Lottie or sprite bundle, and
-      // auto-selecting one enabled Apply on a face that cannot render, so the
-      // format is re-read from the fresh listing rather than assumed.
+      // one more card reads as having done nothing to this crew. Every format the
+      // library holds is wearable, so nothing gates this on the format any more.
+      // The pack's art may also have CHANGED under an id already on screen, so
+      // drop the cached read before anything draws it.
       const installed = rows.find(pack => pack.id === result.id)
       if (!installed) return
-      if (isWearableFormat(installed.format)) onSelect(installed.id)
-      else setPickHint(t('components.avatarBuilder.lib_import_unwearable'))
+      invalidatePackDetail(installed.id)
+      onSelect(installed.id)
     } catch (e) {
       // The server's own message: it names WHICH check the bundle failed, and
       // "invalid bundle" alone gives the user nothing to fix.
@@ -243,6 +244,10 @@ export default function CrewAvatarLibraryTab({
     if (wasSelected) onSelect(null)
     try {
       await api.appearances.remove(id)
+      // Forget the cached read: any avatar still pointed at this id must now
+      // report a load failure and fall back to the seeded ghost, rather than
+      // keep drawing art the library no longer holds.
+      invalidatePackDetail(id)
       setArmedDelete(null)
       await load()
     } catch (e) {
@@ -279,7 +284,6 @@ export default function CrewAvatarLibraryTab({
   const fadeMask = fadeStops(fade)
 
   const card = (pack: AppearancePackSummary) => {
-    const wearable = isWearableFormat(pack.format)
     const selected = selectedId === pack.id
     const formatKey = FORMAT_LABEL_KEYS[pack.format]
     return (
@@ -287,50 +291,30 @@ export default function CrewAvatarLibraryTab({
         key={pack.id}
         className={`flex flex-col gap-1.5 rounded-lg border-2 p-2 transition-colors ${
           selected ? 'border-ring bg-accent-subtle' : 'border-border'
-        } ${wearable ? '' : 'border-dashed'}`}
+        }`}
         data-testid={`avatar-pack-card-${pack.id}`}
       >
-        {/* The dimming rides the INERT half only — the art, name and format of a
-            pack no crew can wear. It used to sit on the whole card, which took
-            the Delete link down with it: the one action an unwearable pack still
-            offers, on exactly the pack a user most wants gone, rendered as
-            though it were disabled. The card's unselectable state is carried by
-            the dashed border and the `lib_unsupported` line instead, neither of
-            which says anything about Delete. */}
         <button
           type="button"
           role="option"
           aria-selected={selected}
-          disabled={!wearable || busy}
+          disabled={busy}
           onClick={() => onSelect(pack.id)}
           // A pointer cursor and a hover ring, because the first-run reader rated
           // clicking a card a GUESS — the grid looked like a display of what is
-          // installed rather than a picker, which is the PR's main path. Both ride
-          // the button, so an unwearable card (`disabled`) offers neither and keeps
-          // reading as inert.
-          className={`flex flex-col items-center gap-1.5 rounded-md text-center ring-offset-2 ring-offset-bg transition-shadow disabled:cursor-not-allowed ${
-            wearable ? 'cursor-pointer hover:ring-2 hover:ring-ring' : 'opacity-50'
-          }`}
+          // installed rather than a picker, which is the PR's main path.
+          className="flex cursor-pointer flex-col items-center gap-1.5 rounded-md text-center ring-offset-2 ring-offset-bg transition-shadow hover:ring-2 hover:ring-ring disabled:cursor-not-allowed"
           data-testid={`avatar-pack-select-${pack.id}`}
         >
           {pack.id === BUILTIN_PACK_ID ? (
             // The built-in pack's art is this bundle's own ghost; the slot route
             // answers 404 for it on purpose.
             <CrewAvatar seed={name} avatar={{ kind: 'ghost' }} size={72} className="rounded-lg" />
-          ) : !wearable ? (
-            // No thumbnail request for art this build cannot draw: the slot route
-            // serves a lottie pack as `application/json` and a sprite pack as a
-            // whole PNG sheet, so an <img> pointed at either renders the browser's
-            // broken-image glyph — which reads as a DAMAGED pack rather than an
-            // unsupported one. The card is unselectable anyway, so the honest
-            // thumbnail is a placeholder and one fewer request.
-            <div
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-lg border border-border bg-bg-elevated"
-              data-testid={`avatar-pack-noart-${pack.id}`}
-            >
-              <FileQuestion size={22} className="text-muted" aria-hidden="true" />
-            </div>
-          ) : (
+          ) : pack.format === 'svg' ? (
+            // An SVG pack's thumbnail is ONE per-slot request and no pack read —
+            // which is why the format is worth branching on here: the detail route
+            // inlines every file in the pack, so drawing this whole grid through
+            // it would load N packs to show N frames.
             <img
               src={packSlotUrl(pack.id, 'idle')}
               alt=""
@@ -339,6 +323,19 @@ export default function CrewAvatarLibraryTab({
               height={72}
               className="h-[72px] w-[72px] rounded-lg border border-border bg-bg-elevated object-cover"
               data-testid={`avatar-pack-thumb-${pack.id}`}
+            />
+          ) : (
+            // A Lottie or sprite pack has no single image to point an `<img>` at:
+            // the slot route serves the first as `application/json` and the second
+            // as the whole sheet, so a bare `<img>` showed a broken-image glyph or
+            // a strip of every frame. `PackAvatar` reads the pack and draws its
+            // real art — one detail read per non-SVG pack, cached for the crew
+            // that then wears it.
+            <PackAvatar
+              id={pack.id}
+              state="idle"
+              size={72}
+              className="rounded-lg"
             />
           )}
           <span className="text-[12px] font-medium leading-tight">{pack.name}</span>
@@ -377,11 +374,6 @@ export default function CrewAvatarLibraryTab({
             {formatKey ? t(formatKey) : pack.format}
           </span>
         </div>
-        {!wearable && (
-          <span className="text-center text-[10.5px] leading-tight text-muted" data-testid={`avatar-pack-unsupported-${pack.id}`}>
-            {t('components.avatarBuilder.lib_unsupported')}
-          </span>
-        )}
         {pack.type === 'custom' &&
           (armedDelete === pack.id ? (
             <div className="flex flex-col gap-1">

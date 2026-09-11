@@ -10,7 +10,7 @@
 import React from 'react'
 import { render, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { SpriteRenderer } from '../apps/crew-companion/SpriteRenderer'
+import { SpriteRenderer } from '../components/appearancePacks/SpriteRenderer'
 
 /** Deterministic clock shared by rAF, setTimeout, and performance.now. */
 let now = 0

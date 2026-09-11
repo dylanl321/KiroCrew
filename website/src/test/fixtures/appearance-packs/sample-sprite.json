@@ -1,0 +1,37 @@
+{
+  "kind": "crew-companion-pack",
+  "version": 1,
+  "id": "sample-sprite",
+  "manifest": {
+    "meta": {
+      "id": "sample-sprite",
+      "name": "Sample Sprite",
+      "author": "Kiro Crew fixtures",
+      "description": "A sprite test pack for the crew appearance library.",
+      "type": "custom",
+      "format": "sprite",
+      "thumbnail": ""
+    },
+    "states": {
+      "idle": "sheet.png",
+      "working": "sheet.png"
+    },
+    "moods": {},
+    "sounds": {
+      "done": "done.wav"
+    },
+    "sprite": {
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "fps": 4,
+      "rowAssignments": {
+        "idle": 0,
+        "working": 1
+      }
+    }
+  },
+  "files": {
+    "sheet.png": "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAmElEQVR42u2U0Q2AIAxE2cTF3MA4kvM5BsQPEtMAPbwaovSSfpi0xztAQnC5hPb1jK0aujgCQQXITVm1bwa+CWIBIHt7PKgjMN2BeQHYW2zxF4VaE/oOsPMuF6Tl2OJV/wTI5rJQAGS+e/G7ScsUmYcApEoATwNQAJoRG0BNoKVA5ikAyzs0DOBVg+8DlM6o99Vj58cDTKcEhEhU1u+chAgAAAAASUVORK5CYII=",
+    "done.wav": "UklGRqgDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YYQDAACAv+HXpGEsHjx5ud7YqWcxHzlzs9rYrW43ITdurdbYsXQ8IzVpp9LYtXpBJjNkoc7XuH9HKTJfm8nWu4VNLDFblcXVvopSLzFXj8DTwI9YMzFUirvRwZRdNzJQhbbOwphjOzNOgLHLw5xoPzRLe6zIw59tQzVKdqfFw6NySDdIcqLCw6V3TDlHbp2+wqh7UTxGa5i7waqAVT5GZ5S3wKyEWkFGZI+zvq2HXkRGYouvva6LYkhGX4eruq+OZ0tHXoOnuLCRa05IXICjtrCUb1JKW3yfs6+WclVMWnmbsK+YdllOWXaXra6aeVxQWXSUqq2bfWBSWXGQp6ycf2NUWW+NpKqdgmdXWm6KoaidhWpZW2yHnqadh21cXGuEm6SdiXBfXWuCmKKdinNiXmp/laCci3ZkYGp+kp2bjHhnYmp8j5uajXpqZGp6jZmZjnxtZmt5ipaXjn5vaGx4iJSWjoBxam14hpGUjYF0bG53hI+SjYJ2b293g42QjIN4cXF3gYqOi4N6c3J4gIiMioN7dXR4gIaKiYN8d3Z5f4WIh4N+eXh6f4OGhYJ+e3p7f4KEhIJ/fXx9f4GCgoF/fn5+f4CAgICX29aNOh1Ppt/MfDAjX7Tgv2wpKm/A3rFdJTR/ytqiTyNAj9HTkkMkTZ7WyYM6KFyr2L5zMi9rt9eyZS43esHUpFgrQYjIzpZNLE2WzcaIQy9ao8+9ejw0Z67Psmw3O3W3zaZgNESCv8mZVTNOj8TCjEw1WZvHun9FOWWmyLFzQD9xr8amaDxHfrbDm107T4m7vY9VPFmUvreETj9knsCueEhEb6a/pW5FSnqtvJtlRFKEsriRXURajrayh1ZGZJe3q31RSm2ft6R0TU93pbWba0xVgKqykmRMXYmtrYleTWSRr6iBWVBtmK+heFZUdZ6umnFUWn2irJJqVGCFpaiLZVVmjKejg2FXbZKnnnxeWnSXp5h2XF57m6WRcFxjgZ2ii2xcaYefnoVoXm+MoJl/ZWF0kJ+UemRkepSdj3VjaH+Wm4pxZGyEl5iFbmVxiJiUgWxndYuXkX1ranqOlo15a21+j5SJdmxxgZCShXRtdISQj4Jzb3iGkIx/cnF7iI6JfHNzfYmNhnpzdoCJi4N5dHiCiYmBeXZ7g4iGgHl4fYOHhH56en6DhYN+e3t/g4SBfnx9gIKCgH5+foCBgIB/f38="
+  }
+}

@@ -32,21 +32,23 @@ export interface AppearancePackSummary {
   format: AnimationFormat
 }
 
-/**
- * Can a crew wear art in this format?
- *
- * Only SVG, and that is a rendering fact rather than a policy: a crew's face is
- * an `<img>`, which cannot play a Lottie document or step a sprite sheet, and
- * core ships no player for either. A pack in another format still lists — greyed
- * and unselectable — because hiding it would read as the import having failed.
- */
-export const isWearableFormat = (format: string): boolean => format === 'svg'
-
 /** Where ONE slot's art is served. `slot` is resolved server-side (working →
  *  loading → thinking → idle, done → idle, error → idle), so a pack that draws
  *  only `idle` still answers every state. */
 export function packSlotUrl(id: string, slot: string): string {
   return `/api/appearances/${encodeURIComponent(id)}/slot/${encodeURIComponent(slot)}`
+}
+
+/**
+ * Where a pack's CUE for one state is served, as audio bytes.
+ *
+ * Only `working`, `done` and `error` have one — idle is the resting state and a
+ * tone for it would play whenever a turn ends. Ask only when the pack's detail
+ * reports `sounds[state]`: the route answers 404 `sound_not_found` otherwise, and
+ * an `HTMLAudioElement` pointed at a 404 fires `error`, not silence.
+ */
+export function packSoundUrl(id: string, state: string): string {
+  return `/api/appearances/${encodeURIComponent(id)}/sound/${encodeURIComponent(state)}`
 }
 
 /** Total byte ceiling the server applies to a bundle (`bundle_too_large`).

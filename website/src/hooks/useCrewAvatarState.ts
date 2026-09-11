@@ -1,5 +1,6 @@
 /**
- * Which reaction a crew's avatar is showing right now.
+ * Which reaction a crew's avatar is showing right now, and the cue that plays
+ * with it.
  *
  * The signal is the crew's own session slot, not a new backend channel:
  * `running` is what MembersPage already reads to light its presence dot, and
@@ -23,6 +24,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useAppSelector } from '../store'
 import type { AvatarFaceState, AvatarSounds } from '../lib/crewAvatarState'
+import { packSoundUrl } from '../lib/appearancePacks/library'
+import { loadPackDetail } from '../lib/appearancePacks/detailCache'
 import { loadSoundSettings, playPreset } from './useNotificationSound'
 
 /** How long `done` / `error` shows before the face returns to rest. */
@@ -70,6 +73,17 @@ export interface CrewAvatarStateOptions {
   running?: boolean
   /** The crew's per-state sounds. Absent or `'none'` for a state = silent. */
   sounds?: AvatarSounds | null
+  /**
+   * The appearance pack this crew wears, when it wears one — never the built-in
+   * `kiro-ghost`, whose art ships in this bundle and carries no served cue.
+   *
+   * A pack may bring its OWN cue per state (`GET /api/appearances/{id}/sound/{state}`),
+   * which is what makes a pack a character rather than a picture. It answers only
+   * where the record says NOTHING about that state: a stored preset is a choice
+   * the user made in the editor and outranks whatever the pack author shipped —
+   * and so does a stored `'none'`, which is that choice being silence.
+   */
+  packId?: string | null
 }
 
 /** A flash plus the edge that produced it: two finishes in a row carry the
@@ -85,6 +99,7 @@ export function useCrewAvatarState({
   agentName,
   running,
   sounds,
+  packId,
 }: CrewAvatarStateOptions): AvatarFaceState {
   // A crew's member slot, when the caller passed a name instead of a key.
   // Returns a string, so this selector cannot churn on slot-array identity.
@@ -164,9 +179,16 @@ export function useCrewAvatarState({
     // entry into `working`, and page load must be silent.
     if (previous === null || previous === state || state === 'idle') return
     const preset = sounds?.[state]
-    if (!preset || preset === 'none') return
+    // `'none'` is a stored value, not an absence (`lib/crewAvatarState.ts`): it
+    // says DELIBERATELY SILENT. So the pack's own cue answers only where the
+    // record says nothing at all about this state — reading `'none'` as "no
+    // preset" would let a pack overrule the user turning that state off.
+    if (preset === 'none') return
+    if (!preset && !packId) return
     // Read fresh: the global toggle and volume live in localStorage and the
-    // user may have changed them since this component mounted.
+    // user may have changed them since this component mounted. This is the ONE
+    // gate both paths pass, so the Settings toggle silences a pack exactly as it
+    // silences a preset.
     const settings = loadSoundSettings()
     if (!settings.enabled || settings.volume <= 0) return
     // NUL-joined rather than interpolated, the same idiom CrewAvatar's cache
@@ -175,9 +197,45 @@ export function useCrewAvatarState({
     const at = now()
     if (at - (lastPlayedAt.get(key) ?? Number.NEGATIVE_INFINITY) < AVATAR_SOUND_WINDOW_MS) return
     if (lastPlayedAt.size >= MAX_TRACKED_SLOTS) lastPlayedAt.clear()
+    // Claimed BEFORE the pack's asynchronous read, not after it: the debounce
+    // exists because the same crew is commonly on screen twice, and two
+    // instances that both awaited before claiming would both play.
     lastPlayedAt.set(key, at)
-    playPreset(preset, settings.volume)
-  }, [state, sounds, identity])
+    if (preset) {
+      playPreset(preset, settings.volume)
+      return
+    }
+    // Re-read as a local so the async callbacks below close over a value the
+    // guard above already proved present.
+    const pack = packId
+    if (!pack) return
+    let cancelled = false
+    // The pack is read rather than assumed present: asking for a cue the pack
+    // does not carry hits 404 `sound_not_found`, and an <audio> pointed at a 404
+    // raises an error event instead of staying quiet. The read is cached per pack
+    // for the session, so this is a promise resolution rather than a request.
+    void loadPackDetail(pack).then(
+      (detail) => {
+        if (cancelled || !detail.sounds[state]) return
+        const audio = new Audio(packSoundUrl(pack, state))
+        audio.volume = settings.volume
+        // A cue that cannot be decoded is not worth a banner — the face still
+        // changed, which is the reaction — but swallowing the rejection silently
+        // would leave a broken pack undiagnosable.
+        void audio.play().catch(() => {
+          // eslint-disable-next-line no-console
+          console.warn('[appearance-pack] cue did not play', { pack, state })
+        })
+      },
+      () => {
+        // The pack could not be read; the avatar reports that failure through its
+        // own fallback, so the cue just stays silent.
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [state, sounds, identity, packId])
 
   return state
 }

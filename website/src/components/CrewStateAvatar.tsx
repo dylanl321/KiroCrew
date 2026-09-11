@@ -9,7 +9,8 @@
  */
 import { useMemo } from 'react'
 
-import CrewAvatar from './CrewAvatar'
+import CrewAvatar, { packAvatarFrom } from './CrewAvatar'
+import { BUILTIN_PACK_ID } from '../lib/appearancePacks/library'
 import { soundsFrom } from '../lib/crewAvatarState'
 import { useCrewAvatarState } from '../hooks/useCrewAvatarState'
 import type { WorkingIntensity } from '../lib/kiroGhostAvatar'
@@ -46,7 +47,14 @@ export default function CrewStateAvatar({
   // A picture keeps its sounds: it has no face to change, but "this crew just
   // finished" is worth hearing whatever it is wearing.
   const sounds = useMemo(() => soundsFrom(avatar), [avatar])
-  const state = useCrewAvatarState({ slotKey, agentName: seed, running, sounds })
+  // A pack may carry cues of its own, used when the record names no preset. The
+  // built-in `kiro-ghost` is excluded because its art ships in this bundle and
+  // the sound route answers 404 `builtin_no_content` for it.
+  const packId = useMemo(() => {
+    const pack = packAvatarFrom(avatar)
+    return pack && pack.id !== BUILTIN_PACK_ID ? pack.id : null
+  }, [avatar])
+  const state = useCrewAvatarState({ slotKey, agentName: seed, running, sounds, packId })
   return (
     <CrewAvatar
       seed={seed}

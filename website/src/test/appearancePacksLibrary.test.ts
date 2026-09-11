@@ -1,11 +1,10 @@
 /**
  * `lib/appearancePacks/library` — the pack library's pure half.
  *
- * These four functions are what the picker and the renderer AGREE on: where a
- * slot's art is, which packs a crew can wear, what a listing row means, and
- * whether a picked file is a bundle at all. A drift between the picker and the
- * face it picks shows up here first, which is why they are pure and tested apart
- * from any component.
+ * These functions are what the picker and the renderer AGREE on: where a slot's
+ * art is, where its cue is, what a listing row means, and whether a picked file
+ * is a bundle at all. A drift between the picker and the face it picks shows up
+ * here first, which is why they are pure and tested apart from any component.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -15,8 +14,8 @@ import {
   MAX_BUNDLE_BYTES,
   PACK_BUNDLE_KIND,
   bundleFromText,
-  isWearableFormat,
   packSlotUrl,
+  packSoundUrl,
   packSummariesFrom,
 } from '../lib/appearancePacks/library'
 
@@ -36,12 +35,16 @@ describe('packSlotUrl', () => {
   })
 })
 
-describe('isWearableFormat', () => {
-  it('accepts SVG only — the face is an <img> and core ships no player', () => {
-    expect(isWearableFormat('svg')).toBe(true)
-    expect(isWearableFormat('lottie')).toBe(false)
-    expect(isWearableFormat('sprite')).toBe(false)
-    expect(isWearableFormat('')).toBe(false)
+describe('packSoundUrl', () => {
+  it('addresses one state cue on the crew appearance route', () => {
+    expect(packSoundUrl('aurora', 'done')).toBe('/api/appearances/aurora/sound/done')
+    expect(packSoundUrl('aurora', 'working')).toBe('/api/appearances/aurora/sound/working')
+  })
+
+  it('encodes both segments, like the slot route', () => {
+    expect(packSoundUrl('../../etc/passwd', 'done')).toBe(
+      '/api/appearances/..%2F..%2Fetc%2Fpasswd/sound/done',
+    )
   })
 })
 
