@@ -77,6 +77,18 @@ _RECORDS: dict[str, dict[str, Any]] = {}
 # exactly right: whoever wrote them is a previous process.
 _LIVE: dict[str, str] = {}
 
+# Which owner tokens are CURRENTLY running as SHARED READERS of each path in
+# this process. A sharer validated that the file on disk is byte-identical to
+# both the durable record and its own rendered payload, delivered its MCP array
+# on that basis, and holds no other stake: it may never rewrite or remove the
+# file. This registry is what keeps the file's future honest for them -- while
+# it is non-empty, the owner's teardown leaves the file in place (see the
+# client's settle transaction) and :func:`claim` refuses a new adoption, so no
+# Crew session can put DIFFERENT permission bytes at a path a sharer already
+# delivered tools against. Process memory, like ``_LIVE``: it dies with the
+# process, which is exactly right -- so do the sharer sessions it describes.
+_SHARERS: dict[str, set[str]] = {}
+
 # Serializes the record transaction: mutate ``_RECORDS``, prune, snapshot, publish.
 # Without it two seeds running concurrently under ``asyncio.to_thread`` can each
 # build a snapshot and publish in the opposite order, so an OLDER snapshot lands
@@ -286,6 +298,16 @@ def claim(path: Path | str, owner: str) -> bool:
     ``permissions.defaultMode``. ``setdefault`` is a single atomic dict
     operation, so exactly one of them can win it no matter how they interleave.
 
+    Refused outright while the path has live SHARERS and *owner* does not
+    already hold the slot: a sharer delivered its MCP array against exactly the
+    bytes on disk, and an adoption exists to REWRITE those bytes -- possibly
+    with a different ``permissions.defaultMode`` -- under a session still
+    running on them. The newcomer is not stranded: an identical payload can
+    still :func:`share`, and a differing one falls to the leave-it-alone
+    branch, which is the pre-share behaviour. The holder itself stays exempt so
+    an owner's idempotent re-claim (and its post-capture re-seed) keeps
+    working.
+
     Idempotent for a holder that already owns the slot, so re-seeding the same
     path in the same client is not a self-refusal.
 
@@ -293,6 +315,9 @@ def claim(path: Path | str, owner: str) -> bool:
     :func:`release`, or the orphan it was about to repair stays wedged behind a
     claim nobody is using for the rest of the process.
     """
+    key = _key(path)
+    if _SHARERS.get(key) and _LIVE.get(key) != owner:
+        return False
     return _LIVE.setdefault(_key(path), owner) == owner
 
 
@@ -314,6 +339,109 @@ def release(path: Path | str, owner: str) -> None:
     key = _key(path)
     if _LIVE.get(key) == owner:
         _LIVE.pop(key, None)
+
+
+def is_shareable(path: Path | str, payload: str) -> bool:
+    """Whether *payload* is byte-identical to the seed recorded for *path*.
+
+    The one relaxation of the live-holder rule, and it lives here so it sits
+    beside the :func:`claim` arbiter it relaxes. A live holder means the path is
+    a running session's seed, so :func:`recorded` hides the record from every
+    other owner and :func:`claim` refuses them -- but the hazard that refusal
+    guards against (a second session re-seeding with a DIFFERENT
+    ``permissions.defaultMode``, or unlinking the file out from under the
+    holder) only exists when the payloads differ. A client whose rendered
+    payload hashes to exactly the recorded bytes would have written the very
+    file the holder is already running against, so that surface governs the
+    client just as well -- PROVIDED it neither writes the path nor ever removes
+    it, which is the caller's half of the contract (a sharer takes no claim, so
+    its teardown has nothing to release and nothing to delete).
+
+    Deliberately ignores ``_LIVE``: the whole point is answering for the client
+    that just lost (or could never take) the live slot. Says nothing about the
+    file on disk -- the record can describe bytes a user has since replaced, so
+    the caller must separately verify the on-disk content equals *payload*
+    before treating the surface as governed.
+
+    In-memory only and lock-free, same as :func:`recorded` and for the same
+    reason: each dict read is a single atomic operation under CPython, so a
+    concurrent :func:`record` yields the older or the newer entry, never a torn
+    one, and either answer is safe (a mismatch simply declines the share).
+    """
+    entry = _RECORDS.get(_key(path))
+    if not entry:
+        return False
+    size, sha = entry.get("size"), entry.get("sha256")
+    if not isinstance(size, int) or not isinstance(sha, str) or not sha:
+        return False
+    return size == len(payload.encode("utf-8")) and sha == digest(payload)
+
+
+def share(path: Path | str, payload: str, owner: str) -> bool:
+    """Register *owner* as a live shared reader of *path*, IFF *payload* matches.
+
+    The transactional form of :func:`is_shareable`, and the registration comes
+    FIRST -- before the validation -- deliberately: the owner's teardown checks
+    :func:`has_sharers` before it touches the disk, so a sharer that validated
+    before registering could pass its checks against a file the teardown was
+    unlinking in the same instant, and keep an MCP array delivered against a
+    path whose next occupant it cannot see. Registered-then-validated, the
+    interleavings both fail safe: a teardown that ran first leaves nothing on
+    disk for the caller's byte check to match (the share is withdrawn), and a
+    teardown that runs after registration sees the sharer and keeps the file.
+    The cost of the early registration is one moment where a sharer is
+    registered but not yet proven -- which can only make a teardown KEEP a
+    file, never delete one, and a kept file is the recorded-orphan shape the
+    next session already repairs.
+
+    ``False`` (and no registration remains) when the durable record does not
+    name exactly *payload*'s bytes. The caller still owes the second half --
+    verifying the file ON DISK holds those bytes -- and must :func:`unshare` if
+    that check fails.
+
+    In-memory only and lock-free; single dict operations, same reasoning as
+    :func:`recorded`.
+    """
+    key = _key(path)
+    _SHARERS.setdefault(key, set()).add(owner)
+    if is_shareable(path, payload):
+        return True
+    unshare(path, owner)
+    return False
+
+
+def unshare(path: Path | str, owner: str) -> None:
+    """Withdraw *owner*'s shared-reader registration on *path*.
+
+    The sharer's whole teardown: it wrote nothing and claimed nothing, so this
+    one in-memory discard is all it owes. Once the last sharer is gone the
+    file is an ordinary recorded orphan again -- the owner's (already departed)
+    teardown left it in place, and the next session adopts and repairs or
+    removes it. Idempotent and lock-free, safe from the synchronous reset path.
+
+    An emptied set deliberately STAYS in the registry rather than being popped:
+    a check-then-pop here could observe emptiness, lose the CPU to a sibling's
+    ``setdefault(...).add(...)`` landing in the same set, and then pop that
+    sibling's live registration out of the registry -- a validated, governed
+    sharer that :func:`has_sharers` no longer reports, which is exactly the
+    unlink-under-a-reader hazard the registry exists to close.
+    :func:`has_sharers` and :func:`claim` already read an empty set as "no
+    sharers", and growth is bounded by the distinct settings paths this process
+    ever shared.
+    """
+    holders = _SHARERS.get(_key(path))
+    if holders is not None:
+        holders.discard(owner)
+
+
+def has_sharers(path: Path | str) -> bool:
+    """Whether any live shared reader is registered on *path*.
+
+    Read by the owner's teardown transaction to decide whether the file must
+    outlive it, and by :func:`claim` to refuse adoptions that would rewrite a
+    surface a sharer is running against.
+    """
+    return bool(_SHARERS.get(_key(path)))
 
 
 def record(path: Path | str, payload: str, owner: str) -> bool:

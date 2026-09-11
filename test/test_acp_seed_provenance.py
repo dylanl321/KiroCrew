@@ -64,6 +64,7 @@ def isolated_records(monkeypatch):
     """
     monkeypatch.setattr(sp, "_RECORDS", {})
     monkeypatch.setattr(sp, "_LIVE", {})
+    monkeypatch.setattr(sp, "_SHARERS", {})
 
 
 def _client(tmp_path: Path, **kw) -> AcpClient:
@@ -752,6 +753,292 @@ class TestCrossSessionAdoption:
         with open(_settings(tmp_path), "a", encoding="utf-8") as fh:
             fh.write("trailing")
         assert first._claude_settings_is_still_ours() is False
+
+
+class TestSharedPermissionSurface:
+    """A byte-identical sibling seed is shared, never rewritten and never removed.
+
+    The one relaxation of the live-holder rule (issue #10118): two sessions of
+    the same agent in the same ``work_dir`` render the same payload, and before
+    this state existed only the FIRST one got Crew's MCP tools -- the second
+    lost the live slot, fell to the leave-it-alone branch, and ran with the
+    whole ``mcpServers`` array withheld. The hazard the live-holder rule guards
+    against (re-seeding with a different ``permissions.defaultMode``, unlinking
+    the owner's file) only exists when the payloads DIFFER, so byte-equality
+    against both the durable record and the file on disk is the exact boundary
+    of what may be shared.
+    """
+
+    def test_a_sibling_with_an_identical_payload_shares_the_surface(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+
+        # The surface governs the sibling -- the MCP array precondition holds --
+        # but nothing was written and nothing about ownership moved.
+        assert sibling._claude_settings_shared is True
+        assert sibling._permission_surface_governed is True
+        assert sibling._claude_settings_authored is False
+        assert sibling._claude_settings_written is None
+        assert path.read_text(encoding="utf-8") == before
+        assert sp._LIVE[os.fspath(path)] == owner._seed_owner
+        assert owner._claude_settings_authored is True
+
+    def test_sharer_teardown_leaves_the_owner_running(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+        assert sibling._claude_settings_shared is True
+
+        _teardown(sibling)
+
+        # The file the owner is running against survives, the owner's live claim
+        # survives, and the sharer's own governed state ends with its session.
+        assert path.read_text(encoding="utf-8") == before
+        assert sp._LIVE[os.fspath(path)] == owner._seed_owner
+        assert owner._claude_settings_is_still_ours() is True
+        assert sibling._claude_settings_shared is False
+        assert sibling._permission_surface_governed is False
+
+    def test_owner_teardown_is_unchanged_once_sharers_are_gone(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+        assert sibling._claude_settings_shared is True
+        _teardown(sibling)
+
+        _teardown(owner)
+
+        # With no live sharer left, the owner still removes its own seed and
+        # revokes its grant exactly as it did before sharers existed.
+        assert not _settings(tmp_path).exists()
+        assert sp.recorded(_settings(tmp_path), "a-later-session") is None
+
+    def test_a_differing_payload_is_still_refused(self, tmp_path, monkeypatch):
+        # Different permission modes render different bytes: the exact hazard the
+        # live-holder rule exists for, and the relaxation must not reach it.
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="bypassPermissions")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+
+        assert sibling._claude_settings_shared is False
+        assert sibling._permission_surface_governed is False
+        assert sibling._claude_settings_authored is False
+        assert path.read_text(encoding="utf-8") == before
+        assert sp._LIVE[os.fspath(path)] == owner._seed_owner
+
+    def test_a_replaced_file_is_not_shared_on_the_records_word_alone(self, tmp_path, monkeypatch):
+        # The record can describe bytes a user has since replaced. Equality must
+        # hold on the DISK too, or the sharer would treat a foreign permission
+        # surface as governed.
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        replaced = json.dumps({"permissions": {"allow": ["Bash(ls)"]}}, indent=2)
+        path.write_text(replaced, encoding="utf-8")
+
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+
+        assert sibling._claude_settings_shared is False
+        assert sibling._permission_surface_governed is False
+        assert path.read_text(encoding="utf-8") == replaced
+
+    def test_is_shareable_ignores_the_live_holder_but_not_the_bytes(self, tmp_path):
+        path = tmp_path / "settings.local.json"
+        payload = '{"permissions": {"defaultMode": "default"}}\n'
+        assert sp.is_shareable(path, payload) is False  # no record at all
+        sp.record(path, payload, _OWNER)
+        # A live holder hides the record from ``recorded`` -- that is the refusal
+        # under relaxation -- but the share check answers on the bytes alone.
+        assert sp.recorded(path, "someone-else") is None
+        assert sp.is_shareable(path, payload) is True
+        assert sp.is_shareable(path, payload + " ") is False
+
+    def test_owner_teardown_with_a_live_sharer_leaves_the_seed(self, tmp_path, monkeypatch):
+        """The file a sharer delivered tools against must outlive the owner.
+
+        Unlinking it would free the pathname for a DIFFERENT permission file --
+        another session's defaultMode, up to bypassPermissions -- under an MCP
+        array already delivered. So the teardown leaves file and record: the
+        recorded-orphan shape a kill -9 already produces, repaired later.
+        """
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+        assert sibling._claude_settings_shared is True
+
+        _teardown(owner)
+
+        assert path.read_text(encoding="utf-8") == before
+        assert sp.has_sharers(path) is True
+        # The record survives with the file, so it stays recognizable as Crew's.
+        assert sp.recorded(path, "a-later-session") is not None
+
+    def test_adoption_is_refused_while_a_sharer_lives(self, tmp_path, monkeypatch):
+        """No Crew session may rewrite bytes a sharer is running against."""
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+        _teardown(owner)
+
+        # Directly: the slot is not takeable while a sharer is registered...
+        assert sp.claim(path, "a-newcomer") is False
+        # ...and end-to-end: a differing-payload newcomer neither adopts nor
+        # shares -- it falls to the leave-it-alone branch, the pre-share behavior.
+        newcomer = _client(tmp_path, permission_mode="bypassPermissions")
+        newcomer._write_claude_local_settings()
+        assert newcomer._claude_settings_authored is False
+        assert newcomer._claude_settings_shared is False
+        assert path.read_text(encoding="utf-8") == before
+        # An identical-payload newcomer still gets the shared surface.
+        joiner = _client(tmp_path, permission_mode="default")
+        joiner._write_claude_local_settings()
+        assert joiner._claude_settings_shared is True
+
+    def test_the_orphan_is_repairable_once_the_last_sharer_leaves(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        sibling = _client(tmp_path, permission_mode="default")
+        sibling._write_claude_local_settings()
+        _teardown(owner)
+        assert path.exists()
+
+        _teardown(sibling)
+
+        assert sp.has_sharers(path) is False
+        # The ordinary orphan lifecycle resumes: the next session adopts, re-seeds
+        # with ITS configuration, and its own teardown removes the file.
+        successor = _client(tmp_path, permission_mode="acceptEdits")
+        successor._write_claude_local_settings()
+        assert successor._claude_settings_authored is True
+        assert _seed(tmp_path)["permissions"]["defaultMode"] == "acceptEdits"
+        _teardown(successor)
+        assert not path.exists()
+
+    def test_share_registers_before_it_validates(self, tmp_path):
+        """A failed validation leaves no registration behind."""
+        path = tmp_path / "settings.local.json"
+        payload = '{"permissions": {"defaultMode": "default"}}\n'
+        sp.record(path, payload, _OWNER)
+        assert sp.share(path, payload + "x", "reader") is False
+        assert sp.has_sharers(path) is False
+        assert sp.share(path, payload, "reader") is True
+        assert sp.has_sharers(path) is True
+        sp.unshare(path, "reader")
+        assert sp.has_sharers(path) is False
+
+    def test_owner_settle_restores_the_file_when_a_sharer_races_the_move(
+        self, tmp_path, monkeypatch
+    ):
+        """The settle's sharer probe is re-run AFTER the move-aside.
+
+        The probe and the move are not one atomic step: a sharer can register and
+        validate in between (its disk check read the file before the move, and
+        registration precedes validation, so it is visible to the re-check).
+        Without the barrier the teardown frees the pathname under a governed
+        reader.
+        """
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        owner = _client(tmp_path, permission_mode="default")
+        owner._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+
+        real = AcpClient._claim_pathname_if_ours
+
+        def move_then_sharer_appears(p, expectation):
+            aside = real(p, expectation)
+            sp._SHARERS.setdefault(os.fspath(path), set()).add("late-reader")
+            return aside
+
+        monkeypatch.setattr(
+            AcpClient, "_claim_pathname_if_ours", staticmethod(move_then_sharer_appears)
+        )
+        _teardown(owner)
+
+        assert path.read_text(encoding="utf-8") == before
+        # Record kept with the file, so it stays a recognizable Crew seed.
+        assert sp.recorded(path, "a-later-session") is not None
+
+    def test_an_adoption_rewrite_stands_down_for_a_late_sharer(self, tmp_path, monkeypatch):
+        """A sharer registering between claim() and the adoption's write wins.
+
+        claim() refused adoption while sharers existed, so any sharer present
+        after the write arrived in that window and validated the OLD bytes. The
+        adoption restores them (the durable record still names them) and stands
+        down rather than leaving a governed reader on bytes the path no longer
+        holds.
+        """
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        first = _client(tmp_path, permission_mode="default")
+        first._write_claude_local_settings()
+        path = _settings(tmp_path)
+        before = path.read_text(encoding="utf-8")
+        _the_owning_process_died()
+
+        real_write = acp_client.atomic_write
+
+        def write_then_sharer_appears(*args, **kwargs):
+            real_write(*args, **kwargs)
+            sp._SHARERS.setdefault(os.fspath(path), set()).add("late-reader")
+
+        monkeypatch.setattr(acp_client, "atomic_write", write_then_sharer_appears)
+        adopter = _client(tmp_path, permission_mode="bypassPermissions")
+        adopter._write_claude_local_settings()
+
+        assert path.read_text(encoding="utf-8") == before
+        assert adopter._claude_settings_authored is False
+        assert adopter._claude_settings_shared is False
+        # The sharer's protection holds: the path is still not adoptable.
+        assert sp.claim(path, "a-newcomer") is False
+
+    def test_a_failed_record_does_not_unlink_under_a_sharer(self, tmp_path, monkeypatch):
+        """The withdrawal branch must not free the pathname under a sharer.
+
+        A sibling can share() against the transient in-memory record while the
+        sidecar persist is failing. The seed then stays -- unrecorded, which is
+        the disclosed cost -- instead of the unlink freeing the name for a
+        different permission file under the sharer's delivered tools.
+        """
+        monkeypatch.setattr(mr, "_ADVERTISED_MODELS", {"claude_code": list(_SERVED)})
+        path = _settings(tmp_path)
+        sp._SHARERS[os.fspath(path)] = {"a-live-reader"}
+        monkeypatch.setattr(sp, "atomic_write", _unwritable_sidecar)
+
+        client = _client(tmp_path, permission_mode="default")
+        client._write_claude_local_settings()
+
+        assert path.exists()
+        assert client._claude_settings_authored is False
+        assert sp.has_sharers(path) is True
 
 
 class TestTheRecordIsOnEveryWriteFloor:
@@ -1515,7 +1802,10 @@ class TestPostCaptureModelResolution:
         """
         import inspect
 
-        source = inspect.getsource(AcpClient._write_claude_local_settings)
+        # The payload is rendered by ``_render_claude_settings_payload`` (split out
+        # so the shared-reader check can compare bytes before deciding to write);
+        # the fold lives there, on the write path itself either way.
+        source = inspect.getsource(AcpClient._render_claude_settings_payload)
         assert 'data["model"] = self._model' not in source
         assert "resolve_wire_model_id" in source
 

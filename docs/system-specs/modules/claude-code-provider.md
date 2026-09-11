@@ -247,6 +247,35 @@ race declines rather than clobbering the winner. Nothing on the teardown path wr
 a file, so reset is a single `unlink` — the same operation the pre-change code
 performed at that point.
 
+**One relaxation: a byte-identical sibling seed is SHARED, not refused.** Two
+sessions of the same agent in the same `work_dir` render the same payload, and
+refusing the second one bought nothing — it ran with the whole `mcpServers` array
+withheld, so only one session per project directory ever had Crew's tools
+(`spawn_run`, `cron_*`, `session_checkpoint`). When the file on disk is a live
+sibling's seed whose bytes equal BOTH Crew's durable record
+(`seed_provenance.is_shareable`, checked ignoring the live holder) AND the exact
+payload this client would have written, the client takes a shared-reader state
+(`_claude_settings_shared`): the permission surface counts as governed
+(`_permission_surface_governed`), so the array is delivered — but the client takes
+no live claim, records nothing, and `_claude_settings_authored` stays false, so its
+teardown neither unlinks the file the owning session is still running against nor
+pops that owner's live slot. A payload that differs in any byte — another
+permission mode, another agent's deny rules, another allowlist — fails the digest
+half and is refused exactly as before. The hazard the live-holder rule exists for
+only arises when the payloads differ, so byte-equality is the precise boundary of
+the relaxation.
+
+The sharer's stake is a live registration (`seed_provenance.share`, taken BEFORE
+the byte checks so the owner's teardown cannot validate-race it; withdrawn on the
+sharer's reset). While any sharer is registered, the file's future is pinned for
+it: the owner's teardown leaves the file and the durable record in place (the
+recorded-orphan shape a `kill -9` already produces, which the next session adopts
+and repairs once the sharers are gone), and `seed_provenance.claim` refuses new
+adoptions, so no Crew session can put different permission bytes at a path a
+sharer already delivered its MCP array against. A user replacing the file by hand
+remains their own action on their own machine — the same disclosed boundary the
+owner path has always had.
+
 What this deliberately does NOT do is preserve and restore a user's own file.
 Doing that means reading and rewriting a path a checked-out repository controls,
 which is how a snapshot read, a cross-session ownership registry, an ACL-preserving
