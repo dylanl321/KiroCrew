@@ -81,6 +81,13 @@ const REVIEW = '22222222-2222-2222-2222-222222222222'
 const COL_A = 'col-aaaa'
 const COL_B = 'col-bbbb'
 const FOLDER_ID = 'folder-zzzz'
+// Every fixture files a subfolder under the subject folder, so it HAS a body.
+// A folder with nothing in it renders no body at all, so it has no collapse
+// state to be per-column about and its row does not carry `aria-expanded` -
+// which is what `folderHeader` below locates it by.
+const SUBFOLDER_ID = 'folder-sub'
+const withChild = (folder: ChatFolder): ChatFolder[] =>
+  [folder, { id: SUBFOLDER_ID, name: 'Sub', parent_id: FOLDER_ID, order: 0 }]
 
 const tags: ChatTag[] = [
   { id: BLOCKED, name: 'Blocked', color: '#e11', order: 0, status: true },
@@ -136,7 +143,7 @@ afterEach(() => vi.clearAllMocks())
 
 describe('board view: per-column folder collapse', () => {
   it('collapsing a folder in one column leaves the other column expanded', () => {
-    const { container } = renderSidebar([{ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false }])
+    const { container } = renderSidebar(withChild({ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false }))
     const headerA = folderHeader(container, COL_A)
     const headerB = folderHeader(container, COL_B)
     expect(headerA.getAttribute('aria-expanded')).toBe('true')
@@ -150,14 +157,14 @@ describe('board view: per-column folder collapse', () => {
   })
 
   it('never writes the server collapsed flag from a board toggle', () => {
-    const { container } = renderSidebar([{ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false }])
+    const { container } = renderSidebar(withChild({ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false }))
     fireEvent.click(folderHeader(container, COL_A))
     fireEvent.click(folderHeader(container, COL_B))
     expect(mocks.updateChatFolder).not.toHaveBeenCalled()
   })
 
   it('persists per-column state across a remount', () => {
-    const folderData: ChatFolder[] = [{ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false }]
+    const folderData: ChatFolder[] = withChild({ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: false })
     const first = renderSidebar(folderData)
     fireEvent.click(folderHeader(first.container, COL_A))
     first.unmount()
@@ -170,7 +177,7 @@ describe('board view: per-column folder collapse', () => {
   it('a column without an override follows the server default', () => {
     // Server says collapsed; expanding in A must not expand B, whose state is
     // still the server flag.
-    const { container } = renderSidebar([{ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: true }])
+    const { container } = renderSidebar(withChild({ id: FOLDER_ID, name: 'CDF', order: 0, collapsed: true }))
     expect(folderHeader(container, COL_A).getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(folderHeader(container, COL_A))
     expect(folderHeader(container, COL_A).getAttribute('aria-expanded')).toBe('true')

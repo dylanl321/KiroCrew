@@ -96,8 +96,11 @@ function renderSidebar() {
 }
 
 /** The folder header row that owns a given folder name. */
+// The name's parent is the folder's header shell. Not `closest('button')`: a
+// folder with no body is not a button at all, so that finds nothing on the
+// empty folders these cases use.
 const header = (name: string) =>
-  screen.getByText(name).closest('button') as HTMLElement
+  screen.getByText(name).parentElement as HTMLElement
 
 describe('ChatSidebar – channel session folder', () => {
   it('shows the channel brand mark on a channel-owned folder', () => {

@@ -86,6 +86,7 @@ const folders: ChatFolder[] = [
 ]
 
 function renderSidebar(foldersOverride: ChatFolder[] = folders) {
+  mocks.chatFolders.mockImplementation(() => Promise.resolve(foldersOverride))
   const store = createTestStore({
     dashboard: {
       status: {}, connected: false, slots: [], approvalMode: 'normal',
@@ -136,12 +137,12 @@ describe('board view: folder reorder wiring', () => {
 
   it('marks the folder header as a drag handle (grab cursor)', () => {
     const { container } = renderSidebar()
-    // Fork divergence: the board folder header is role="button" (collapse
-    // toggle), not upstream's role="group" header rework (from un-ported
-    // declutter work) — same element, different role.
+    // The header is the drop target's first child. Not `[role="button"]`: this
+    // fixture's folder has no body, so it is deliberately not a button - but it
+    // is still draggable, which is what this case measures.
     const header = container.querySelector(
-      `[data-testid="col-${COL_A}-folder-${FOLDER_A}"] [role="button"]`,
-    ) as HTMLElement | null
+      `[data-testid="col-${COL_A}-folder-${FOLDER_A}"]`,
+    )?.firstElementChild as HTMLElement | null
     expect(header).toBeTruthy()
     expect(header!.className).toContain('cursor-grab')
   })
@@ -161,7 +162,13 @@ describe('board view: folder reorder wiring', () => {
     // guard: a click on the toggle flips this column's collapse state.
     // Board collapse is per-column and client-local, so the flip never
     // writes the server flag.
-    const { container } = renderSidebar()
+    // Alpha gets a subfolder so it HAS a body: an empty folder renders none, so
+    // it has no collapse state and its row carries no `aria-expanded` to read.
+    const { container } = renderSidebar([
+      { id: FOLDER_A, name: 'Alpha', order: 0 },
+      { id: 'folder-sub', name: 'Sub', parent_id: FOLDER_A, order: 0 },
+      { id: FOLDER_B, name: 'Bravo', order: 1 },
+    ])
     const header = () => container.querySelector(
       `[data-testid="col-${COL_A}-folder-${FOLDER_A}"] [role="button"][aria-expanded]`,
     ) as HTMLElement
