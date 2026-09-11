@@ -2303,6 +2303,31 @@ reworded instead of presenting a rejected write as success.
 3. **Consolidation** (background): extracts corrections not already saved via `learn_add`. V1 and V2 call `write_lesson(source="consolidation")` at confidence 0.9.
 4. **Dashboard/CLI** (manual): `POST /api/lessons` → `write_lesson()`
 
+**Durable lesson volatile-fact boundary.** The primary `write_lesson()` writer and the
+JSONL `LessonStore` fallback call one shared predicate before persistence. It refuses a
+`rule` or `negative` clause that asserts `current model` or `active model` as runtime
+identity, uses `running as`, or binds `selected model` / `session model` to a concrete
+model ID. These forms are refused in every category. A behavioral imperative such as
+“always use <concrete ID>” is also refused in every category, so relabeling that
+imperative as `knowledge` cannot bypass the boundary. A concrete model ID used as a fact
+in the `rule` remains valid in a `knowledge` lesson; the `negative` clause never gets
+that exemption because it is behavioral guidance. The vector writer returns
+`outcome="refused", reason="volatile_session_fact"` before embedding or deduplication;
+the JSONL route maps the same refusal to that wire outcome and reason.
+Automatic JSONL callers read the returned outcome before counting, notifying, ledgering,
+or reporting an imported lesson. Onboarding applies the same predicate before either its
+vector or JSONL instruction branch, so a rejected directive is never reported as
+imported. Both context renderers apply the predicate again. A legacy volatile row stays
+available to listing and manual deletion, never reaches a prompt, and carries
+`withheld_reason="volatile_session_fact"` in the lessons API so `learn_list` marks it
+`WITHHELD`.
+The `learn_add` MCP handler, task runner, consolidation, dashboard POST route, headless
+`--slack-only` route, and direct writers therefore enforce the same boundary. The MCP
+handler renders the reason as `Error: volatile_session_fact: ...` and asks for a reusable
+behavioral rule instead. A concrete behavioral model pin belongs in
+`agent.role_models.<role>`. Model-family guidance without a concrete ID, and concrete IDs
+inside durable `knowledge` facts, still persist.
+
 **Migration**: `migrate_from_markdown()` reads `lessons.jsonl` and writes each entry as `lesson.*` semantic key with `source=migration, confidence=0.9`. User-explicit lessons (confidence 1.0) can't be overwritten by migration.
 
 Categories: `tool`, `preference`, `knowledge`. Injected as a `[Learned corrections]` block. V1 session context retains query-ranked, project-scoped lessons; V2 selects bounded, project-scoped lessons without a query embedding. Explicit lesson readers can use hybrid relevance and fill the caller's character budget, reporting shown and omitted counts; the JSONL path caps at `_MAX_LESSONS_IN_CONTEXT = 50`. The JSONL store retains `_MAX_LESSONS_TOTAL = 200` and prunes oldest-first beyond that.
