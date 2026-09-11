@@ -195,34 +195,39 @@ function reconcileOptimisticEcho(
 
 /** Frame roles that retire a slot's pending STATELESS question card.
  *
- *  Deliberately NARROWER than "every role that starts a turn". The card's
- *  contract is "the user's answer arrives as the next message", and the roles
- *  here are the ones where that answer channel is genuinely gone:
+ *  Exactly one role, `user`, and the narrowness is the whole rule. The card's
+ *  contract is "the user's answer arrives as the next message", so the only
+ *  frame that consumes that channel is one the HUMAN sent: they answered in the
+ *  composer, or said something else, and either way spent their next message.
  *
- *  - `user` — the human spoke (composer answer, or something else entirely);
- *    either way the next-message channel was consumed by its owner.
- *  - `nudge` — an auto-nudge cycle deliberately moved the session on past the
- *    question; the loop's instruction, not the answer, became the next turn.
+ *  `nudge` was in this set (PR #2131) on the theory that an auto-nudge cycle
+ *  moves the session past the question. It does not consume the answer channel:
+ *  a nudge wakes the SAME agent in the SAME conversation, so a message the user
+ *  sends ten cycles later still lands on the agent that asked. Retiring on it
+ *  deleted the user's only affordance for a question nobody had answered —
+ *  observed on a monitored conductor session, where the card was gone by the
+ *  time the user came back to it, and the server record went with it so a reload
+ *  had nothing to rehydrate. An unanswered card now stays until it is answered
+ *  or explicitly DISMISSED; dismissal is a server round-trip that retires the
+ *  record too, and it is the control that keeps a genuinely stale card from
+ *  lingering — the auto-retire was covering for a control that now exists.
  *
  *  `inject` (cron notifications, recovery resumes) and `subagent` (completion
- *  events) also start turns, but they interleave with a question the agent may
- *  STILL be waiting on: an agent that spawns work, asks the user a question,
- *  and ends its turn will absorb completion events while the question remains
- *  genuinely open — clearing the card on those frames would delete the user's
- *  only UI for answering a live question. If a session moves on for real, its
- *  next user/nudge frame still retires the card. Extending coverage is a data
- *  edit here, not a code change (per Design Review on PR #2131). */
-const QUESTION_RETIRING_ROLES = new Set(['user', 'nudge'])
+ *  events) also start turns and are out for the same reason they always were:
+ *  they interleave with a question the agent may STILL be waiting on. Extending
+ *  coverage is a data edit here, not a code change (per Design Review on PR
+ *  #2131), and the backend's `_QUESTION_RETIRING_ROLES` must be edited with it
+ *  (parity is pinned by test_slot_needs_input_status.py). */
+const QUESTION_RETIRING_ROLES = new Set(['user'])
 
-/** Drop a slot's pending STATELESS question card (no ``ask_id``) when a
- *  turn-consuming frame lands on that slot.
+/** Drop a slot's pending STATELESS question card (no ``ask_id``) when the user's
+ *  own frame lands on that slot.
  *
  *  A stateless card's contract is "the user's answer arrives as the next
  *  message" (the agent ended its turn on it — `post_question_card`, no
- *  server-side wait). So the frame that STARTS the slot's next turn consumes
- *  the card's answer channel and makes it stale. Without this, a monitored
- *  session that asked a question and was then nudged onward parks the card
- *  above the composer FOREVER — it invites an answer no turn is waiting for.
+ *  server-side wait). A `user` row IS that next message, so the card it was
+ *  waiting for has arrived and the card is spent. Nothing else retires it —
+ *  see `QUESTION_RETIRING_ROLES` for why a nudge does not.
  *
  *  Server-owned cards (with `ask_id`) are exempt: their lifecycle is the
  *  `question_card_resolved` broadcast (answered / timed out / cancelled /
@@ -2377,7 +2382,7 @@ function mergePreservedThinking<M extends { role: string; content: string; cls?:
       // A PLAIN optimistic send is deliberately NOT resolved this way, even
       // though it carries a `sendId` too: for a non-steer send, "a persisted
       // row with this id exists" does not prove "the turn above this bubble is
-      // over" — crew mode persists the user row as a durable queue entry and
+      // over" — a durable-queue ingress (the retired Crew Mode was one) can persist the user row and
       // starts no turn at all — so recording a boundary there re-opens the
       // over-drop class the text heuristics were retired for. For a steer
       // bubble the inference is sound precisely because the row's own `steer`
@@ -3038,7 +3043,7 @@ export const resumeFromHistory = createAsyncThunk(
     const cursor = typeof d.next_before === 'number' ? d.next_before : null
     // `surface` (falling back to `mode`) is returned so a caller resuming from
     // a surface that cannot display every slot (ChatPage's unified view only
-    // shows default/orchestrator/crew, see isChatPageSurface) can tell a
+    // shows default/orchestrator, see isChatPageSurface) can tell a
     // silently-unusable resume apart from a genuinely failed one (#3624) --
     // the request succeeds either way, so `ok` alone cannot distinguish them.
     return { ok: d.ok, key: d.key, surface: d.surface ?? d.mode, nextBefore: cursor ?? 0, messages: filterMessages(d.messages || []), hasMore: cursor !== null && (d.has_more || false), total: d.total || 0 }
@@ -3480,7 +3485,8 @@ const CONTINUE_SCAN_SKIP = new Set(['queued', 'tool_call', 'tool_result', 'injec
  * True when the active slot can be handed back to the agent — i.e. Continue is
  * worth offering on an empty composer.
  *
- * The rule is simply "the slot is idle and has a conversation under it". It is
+ * The rule is "the slot is idle and has a conversation under it", except for
+ * a current typed member-memory setup refusal that requires the owner editor. It is
  * NOT limited to turns that visibly died, because a transcript cannot reliably
  * show that they did: a force-quit or force-exit runs no cleanup, so no error
  * row is ever written and a killed turn reads exactly like a finished one (see
@@ -4503,7 +4509,7 @@ const chatSlice = createSlice({
       state.selectedSubagentId = action.payload
     },
     /** "Dismiss done": drop terminal cards for a slot (backend clear is the
-     *  caller's job via DELETE /api/spawn; this trims the local view). */
+     *  caller's job via per-id DELETE /api/spawn/{id}; this trims the local view). */
     clearTerminalSubagents(state, action: PayloadAction<{ slot: string }>) {
       const slot = action.payload.slot
       if (isUnsafeKey(slot)) return

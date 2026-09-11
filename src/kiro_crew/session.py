@@ -449,6 +449,7 @@ POOL_DECISIONS: frozenset[str] = frozenset(
         "miss_empty",
         "bypass_resume",
         "bypass_stateless",
+        "bypass_private_memory",
         "bypass_cwd",
         "bypass_effort",
         "bypass_env",
@@ -1904,10 +1905,6 @@ class SessionManager:
     def _append_companion_runtime_rows(self, rows: list[dict[str, object]]) -> None:
         """Append background and subagent runtime process rows."""
         self._allocation_boundary()._append_companion_runtime_rows(rows)
-
-    def context_info(self) -> list[dict[str, object]]:
-        """Return the dashboard-facing live context snapshot."""
-        return self._allocation_boundary().context_info()
 
     @staticmethod
     def _resolve_agent_model(agent: str) -> str:

@@ -139,6 +139,24 @@ def _safe_display(value: object) -> str:
     return repr(value)
 
 
+def _doctor_member_memory_bindings(cfg: KiroCrewConfig, issues: list[str]) -> None:
+    """Check every configured member's existing binding without initializing memory."""
+    from kiro_crew.memory_stores import require_member_memory_store
+
+    print("\nMember Memory Bindings")
+    if not cfg.agents:
+        print("  (no configured members)")
+    for name, member in cfg.agents.items():
+        binding = f"{_safe_display(name)} -> {_safe_display(getattr(member, 'memory_store', None))}"
+        try:
+            require_member_memory_store(cfg, name, require_directory=True)
+        except Exception as exc:  # noqa: BLE001 -- one broken member must not hide healthy peers
+            print(f"  {binding}: unavailable ({_safe_display(str(exc))})")
+            issues.append(f"member memory binding unavailable: {binding}")
+        else:
+            print(f"  {binding}: valid binding")
+
+
 def _doctor_effective_model(cfg: KiroCrewConfig, project_dir: str, issues: list[str]) -> None:
     """Report which model a new session starts on, and which tier decided it.
 
@@ -207,7 +225,10 @@ def _doctor_effective_model(cfg: KiroCrewConfig, project_dir: str, issues: list[
         bindings = resolve_agent_bindings(cfg)
         override = normalize_agent_model(bindings.model)
         bound = bindings.kiro_agent or "kirocrew"
-    except Exception:  # noqa: BLE001 -- a broken alias must not kill the report
+    except Exception as exc:  # noqa: BLE001 -- a broken alias must not kill the report
+        print(f"  binding:     unavailable ({_safe_display(str(exc))})")
+        print("               See the member memory binding diagnostics below.")
+        issues.append("default agent binding unavailable")
         override = ""
         bound = "kirocrew"
     # kiro_agent is free text in config.json and this name reaches a path join.
@@ -1133,6 +1154,88 @@ def _doctor_claude_backend() -> None:
         # probe's three-valued verdict exists to prevent, and which the dashboard
         # also refuses to make.
         print("  claude-acp:  ⚠️  could not check")
+
+
+#: The managed default agent, whose spec is the one a stock install runs.
+#: Mirrors ``agent._MAIN_AGENT_NAME``, which is private; the doctor row below
+#: reports on that spec because it is the one every default session resolves.
+_MAIN_AGENT_NAME = "kirocrew"
+
+
+def _doctor_unresolved_mcp_refs() -> None:
+    """One row per selectable harness: would the default spec's ``@server`` refs
+    resolve on it?
+
+    The static half of the runtime detector in
+    :mod:`kiro_crew.acp.mcp_ref_guard`, answering the same question before a
+    session rather than during one. The defect it names has shipped on three
+    harnesses (``providers/mirrors/README.md``): a session comes up with
+    ``tools: ["@kirocrew-core", ...]`` and nothing defining ``kirocrew-core``, so
+    every Crew tool is absent while the harness works and nothing anywhere is red.
+    A row here is the answer to "my agent has no tools on this backend" that
+    otherwise takes a diagnosis.
+
+    Reports only, and appends NO entry to ``issues``, on the terms
+    :func:`_doctor_strict_identity` sets: a harness the operator has not adopted
+    having no projection yet is a known state of the tree, not a broken install,
+    and failing doctor's exit code on it would make every stock host red for a
+    backend nobody selected.
+
+    Asks ``agent_sdk`` rather than assembling the answer here. The refs need the
+    agent spec and each backend's spec projection, both of which live below the
+    boundary, so reaching them from this module would take three new ACP /
+    providers edges the agent-sdk-boundary gate refuses -- and correctly: which
+    file a harness reads its servers from is exactly the knowledge a consumer is
+    not supposed to hold. ``agent_spec_mcp_refs`` reads the mirror seam, so a
+    backend projecting outside ``providers/mirrors/`` (KAS) reads as unprojected;
+    ``has_mirror`` is what lets the row say which case it is.
+
+    kiro-cli resolves its refs against the spec it is handed, so a healthy install
+    prints a clean row there rather than every ref it declares -- the resolver keys
+    that on the backend id, not on this function.
+    """
+    from kiro_crew.acp_backends import POLICY_ID_BY_BACKEND
+    from kiro_crew.agent_sdk.drivers.acp import agent_spec_mcp_refs
+
+    try:
+        spec_found, rows = agent_spec_mcp_refs(_MAIN_AGENT_NAME)
+    except Exception:
+        # Triage must survive an unreadable spec or registry; the rows are advisory.
+        return
+    if not spec_found:
+        print("  mcp tool refs: \u23f9 no default agent spec on disk yet")
+        return
+
+    for backend, unresolved, has_mirror in rows:
+        label = POLICY_ID_BY_BACKEND.get(backend, backend) or backend
+        if not unresolved:
+            print(f"  mcp tool refs: \u2705 {label} \u2014 every @server ref resolves")
+            continue
+        # Read off a hand-editable spec a cloned repo or an installed app can
+        # author, so it can carry OSC/ANSI sequences that spoof the lines around
+        # it -- the same reason every other spec-derived value in this report is
+        # printed through _safe_display.
+        refs = ", ".join(_safe_display(ref) for ref in unresolved)
+        if not has_mirror:
+            print(f"  mcp tool refs: \u23f9 {label} has no mirror; unprojected: {refs}")
+            _print_wrapped(
+                "Those refs name no server this backend would be handed, so the "
+                "tools behind them are absent from its sessions with nothing to "
+                "say so. The shared MCP gateway can still deliver a server it "
+                "wrapped as a broker stub, which this row does not model. "
+                "Whether the omission is a decision or an unwritten projection "
+                "is recorded per backend in providers/mirrors/registry.py "
+                "(NO_MIRROR); a backend that projects elsewhere reads as "
+                "unprojected here."
+            )
+            continue
+        print(f"  mcp tool refs: \u26a0 {label} projects a spec that still misses: {refs}")
+        _print_wrapped(
+            "This backend HAS a mirror and its projection dropped these refs "
+            "anyway -- a registry-marked entry, an entry with no usable "
+            "transport, or a name the spec references but never defines. Compare "
+            "the agent spec's mcpServers against its tools list."
+        )
 
 
 def _doctor_agent_auth() -> None:
@@ -3203,6 +3306,7 @@ def _doctor(platform_boot_error: "Exception | None" = None, bundle: bool = False
     # agent.model, and the whole point here is that the global is not
     # necessarily what a new session gets.
     _doctor_effective_model(cfg, proj, issues)
+    _doctor_member_memory_bindings(cfg, issues)
 
     # ── Stored defaults a release has since changed ──
     render_doctor_section(issues)
@@ -3217,6 +3321,7 @@ def _doctor(platform_boot_error: "Exception | None" = None, bundle: bool = False
     _doctor_trust_root()
     _doctor_strict_identity(cfg)
     _doctor_mcp_gateway_daemon(issues)
+    _doctor_unresolved_mcp_refs()
 
     # ── Credentials (AWS / credential-vending MCP) ──
     # After identity, before the agent-facing sections: this is the answer to

@@ -948,10 +948,10 @@ class TestBindingAuthorization:
             ({"mode": "bogus"}, "invalid_mode"),
             ({"memory_mode": "bogus"}, None),
             # A crew-bound create carrying ANY non-plain mode is refused before the
-            # peer write (F3): the mode guard fires ahead of the crew-capable-name
+            # peer write (F3): the mode guard fires ahead of every later name
             # check, so a crew-bound session can never host mode-specific work that
             # would run on THIS machine.
-            ({"name": "...", "mode": "crew"}, "remote_mode_unsupported"),
+            ({"name": "...", "mode": "orchestrator"}, "remote_mode_unsupported"),
         ],
         ids=["mode", "memory_mode", "remote_mode_unsupported"],
     )
@@ -1113,14 +1113,16 @@ class TestBoundCreateDefaults:
     @pytest.fixture
     def local_default(self, monkeypatch):
         """A config whose default agent exists only on THIS machine."""
+        from kiro_crew.config.loader import KiroCrewAgentConfig, KiroCrewConfig
+        from kiro_crew.memory_stores import provision_member_memory
+
+        config = KiroCrewConfig()
+        config.agents["local-only-crew"] = KiroCrewAgentConfig(kiro_agent="local-only-crew")
+        config.default_agent = "local-only-crew"
+        provision_member_memory(config, "local-only-crew")
         monkeypatch.setattr(
             "kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load",
-            staticmethod(
-                lambda: SimpleNamespace(
-                    default_agent="local-only-crew",
-                    dashboard=SimpleNamespace(default_project=""),
-                )
-            ),
+            staticmethod(lambda: config),
         )
 
     @pytest.mark.asyncio
@@ -3436,7 +3438,7 @@ class TestRemoteSessionIsPlainChatOnly:
         slot = _remote_slot("chat-1")
         state._slots[slot.key] = slot
         async with TestClient(TestServer(_mode_app(state))) as client:
-            resp = await client.patch("/api/chat/slots/chat-1/mode", json={"mode": "crew"})
+            resp = await client.patch("/api/chat/slots/chat-1/mode", json={"mode": "orchestrator"})
             assert resp.status == 409
             assert (await resp.json())["code"] == "remote_mode_unsupported"
         # The mode is left plain — the switch changed nothing.
