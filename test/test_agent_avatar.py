@@ -22,7 +22,12 @@ from kiro_crew.config.loader import (
     KiroCrewAgentConfig,
     KiroCrewConfig,
 )
-from kiro_crew.config.sections import _AVATAR_SOUNDS, _AVATAR_TRAIT_MAX_LEN, _safe_avatar
+from kiro_crew.config.sections import (
+    _AVATAR_MOTIONS,
+    _AVATAR_SOUNDS,
+    _AVATAR_TRAIT_MAX_LEN,
+    _safe_avatar,
+)
 
 
 def _load_from_dict(data: dict) -> KiroCrewConfig:
@@ -122,7 +127,7 @@ class TestSafeAvatar:
 
     def test_overlong_trait_value_truncated(self):
         out = _safe_avatar({"kind": "ghost", "traits": {"eyes": "x" * 500}})
-        assert len(out["traits"]["eyes"]) == 32
+        assert len(out["traits"]["eyes"]) == _AVATAR_TRAIT_MAX_LEN
 
     def test_bools_require_real_booleans(self):
         """bool("false") is True, so string-typed values must NOT coerce on."""
@@ -963,118 +968,94 @@ class TestUploadedAvatarEndpoints:
         assert stored["kind"] == "image"
 
 
-_EXPRESSIONS = {"working": {"eyes": "squint"}, "error": {"eyes": "x", "mouth": "frown"}}
+#: A per-state eyes/mouth pick: a key no tier accepts, which an install may still
+#: carry in its config.json. It is junk to the validator, and the property under
+#: test is that it loads as though it were absent rather than failing the load.
+_LEGACY_EXPRESSIONS = {"working": {"eyes": "squint"}, "error": {"eyes": "x", "mouth": "frown"}}
+_MOTIONS = {"done": "bounce", "error": "shake"}
 _SOUNDS = {"working": "blip", "done": "chime", "error": "pulse"}
 
 
-class TestSafeAvatarPerStateOverrides:
-    """`expressions` and `sounds`: accepted on both kinds, junk dropped silently.
+class TestSafeAvatarGhostReactions:
+    """``motions`` and ``sounds``: the GHOST tier's reactions, junk dropped silently.
 
-    The forgiveness direction is the load-bearing one. `config.json` is
-    hand-editable and agent-writable, so a malformed per-state value must cost
-    the crew that value and nothing else -- never its whole avatar, and never a
-    400 at the endpoints.
+    The forgiveness direction is the load-bearing one. ``config.json`` is
+    hand-editable and agent-writable, so a malformed reaction must cost the crew
+    that reaction and nothing else -- never its whole avatar, and never a 400 at
+    the endpoints.
     """
 
     def test_ghost_keeps_both_keys(self):
-        got = _safe_avatar({**_GHOST, "expressions": _EXPRESSIONS, "sounds": _SOUNDS})
+        got = _safe_avatar({**_GHOST, "motions": _MOTIONS, "sounds": _SOUNDS})
         assert got["traits"] == _GHOST["traits"]
-        assert got["expressions"] == _EXPRESSIONS
+        assert got["motions"] == _MOTIONS
         assert got["sounds"] == _SOUNDS
 
-    def test_image_keeps_both_keys(self):
-        got = _safe_avatar(
-            {
-                "kind": "image",
-                "v": 17,
-                "file": "0123456789abcdef.png",
-                "expressions": _EXPRESSIONS,
-                "sounds": _SOUNDS,
-            }
-        )
-        assert got == {
-            "kind": "image",
-            "v": 17,
-            "file": "0123456789abcdef.png",
-            "expressions": _EXPRESSIONS,
-            "sounds": _SOUNDS,
-        }
+    def test_ghost_without_traits_is_valid_when_it_carries_reactions(self):
+        """Name-derived face plus reactions.
 
-    def test_ghost_without_traits_is_valid_when_it_carries_overrides(self):
-        """The new shape: name-derived face plus per-state overrides.
-
-        `traits` is omitted from the record rather than stored as `{}`, so the
-        frontend's "missing or empty means name-derived" rule reads one
-        spelling.
+        ``traits`` is omitted from the record rather than stored as ``{}``, so the
+        frontend's "missing or empty means name-derived" rule reads one spelling.
         """
-        got = _safe_avatar({"kind": "ghost", "sounds": {"done": "ding"}})
-        assert got == {"kind": "ghost", "sounds": {"done": "ding"}}
+        got = _safe_avatar({"kind": "ghost", "motions": {"done": "nod"}})
+        assert got == {"kind": "ghost", "motions": {"done": "nod"}}
         assert "traits" not in got
 
     def test_empty_traits_dict_also_yields_no_traits_key(self):
-        got = _safe_avatar({"kind": "ghost", "traits": {}, "expressions": {"done": {"eyes": "o"}}})
-        assert got == {"kind": "ghost", "expressions": {"done": {"eyes": "o"}}}
+        got = _safe_avatar({"kind": "ghost", "traits": {}, "sounds": {"done": "ding"}})
+        assert got == {"kind": "ghost", "sounds": {"done": "ding"}}
 
     def test_bare_ghost_still_collapses(self):
         assert _safe_avatar({"kind": "ghost"}) == {}
 
-    def test_ghost_whose_overrides_all_drop_out_collapses(self):
-        """`kind` alone is not an override -- it must read as "no override"."""
-        assert _safe_avatar({"kind": "ghost", "expressions": {"nope": {"eyes": "o"}}}) == {}
+    def test_ghost_whose_reactions_all_drop_out_collapses(self):
+        """``kind`` alone is not an override -- it must read as "no override"."""
+        assert _safe_avatar({"kind": "ghost", "motions": {"done": "airhorn"}}) == {}
         assert _safe_avatar({"kind": "ghost", "sounds": {"working": "airhorn"}}) == {}
 
     def test_unknown_state_is_dropped(self):
         got = _safe_avatar(
             {
                 **_GHOST,
-                "expressions": {"working": {"eyes": "o"}, "idle": {"eyes": "o"}},
+                "motions": {"done": "sparkle", "idle": "sparkle", "working": "sparkle"},
                 "sounds": {"done": "pop", "thinking": "pop"},
             }
         )
-        assert got["expressions"] == {"working": {"eyes": "o"}}
+        assert got["motions"] == {"done": "sparkle"}
         assert got["sounds"] == {"done": "pop"}
 
-    def test_only_eyes_and_mouth_move_per_state(self):
-        """Identity axes must not change with state, or the crew stops being itself."""
-        got = _safe_avatar(
-            {
-                **_GHOST,
-                "expressions": {
-                    "working": {
-                        "eyes": "squint",
-                        "mouth": "oh",
-                        "brows": "raised",
-                        "accessory": "halo",
-                        "prop": "mug",
-                        "tile": "#ffffff",
-                        "blush": True,
-                        "flip": True,
-                    }
-                },
-            }
-        )
-        assert got["expressions"] == {"working": {"eyes": "squint", "mouth": "oh"}}
+    @pytest.mark.parametrize(
+        ("state", "motion"),
+        [(state, motion) for state, names in _AVATAR_MOTIONS.items() for motion in names],
+    )
+    def test_every_shipped_motion_is_accepted(self, state, motion):
+        got = _safe_avatar({**_GHOST, "motions": {state: motion}})
+        assert got["motions"] == {state: motion}
 
-    def test_expression_values_are_truncated_like_traits(self):
-        got = _safe_avatar({**_GHOST, "expressions": {"working": {"eyes": "e" * 99}}})
-        assert got["expressions"]["working"]["eyes"] == "e" * _AVATAR_TRAIT_MAX_LEN
+    def test_a_motion_from_another_states_vocabulary_is_dropped(self):
+        """Each state has its OWN list, and crossing them changes the reaction.
 
-    def test_empty_expression_value_is_dropped(self):
-        """An empty string already means "absent" -- do not store a second spelling."""
-        got = _safe_avatar({**_GHOST, "expressions": {"working": {"eyes": "", "mouth": "oh"}}})
-        assert got["expressions"] == {"working": {"mouth": "oh"}}
+        ``shake`` is the error vocabulary: accepted on ``done`` it would play a
+        failure animation on success, which is not what the author wrote.
+        """
+        got = _safe_avatar({**_GHOST, "motions": {"done": "shake", "error": "shake"}})
+        assert got["motions"] == {"error": "shake"}
 
-    def test_a_state_left_with_no_axes_is_omitted(self):
-        got = _safe_avatar({**_GHOST, "expressions": {"working": {"eyes": ""}}})
-        assert "expressions" not in got
+    def test_unknown_motion_is_dropped(self):
+        got = _safe_avatar({**_GHOST, "motions": {"done": "backflip", "error": "droop"}})
+        assert got["motions"] == {"error": "droop"}
+
+    def test_motion_none_is_kept_as_explicit_stillness(self):
+        """Distinct from an absent state: one state can opt out of a fleet motion."""
+        got = _safe_avatar({**_GHOST, "motions": {"done": "none", "error": "shake"}})
+        assert got["motions"] == {"done": "none", "error": "shake"}
 
     @pytest.mark.parametrize("preset", _AVATAR_SOUNDS)
     def test_every_shipped_preset_is_accepted(self, preset):
         got = _safe_avatar({**_GHOST, "sounds": {"working": preset}})
         assert got["sounds"] == {"working": preset}
 
-    def test_none_is_kept_as_explicit_silence(self):
-        """Distinct from an absent state: one state can opt out of a fleet cue."""
+    def test_sound_none_is_kept_as_explicit_silence(self):
         got = _safe_avatar({**_GHOST, "sounds": {"working": "none", "done": "chime"}})
         assert got["sounds"] == {"working": "none", "done": "chime"}
 
@@ -1083,7 +1064,7 @@ class TestSafeAvatarPerStateOverrides:
         assert got["sounds"] == {"done": "chime"}
 
     def test_empty_objects_are_omitted_not_stored(self):
-        got = _safe_avatar({**_GHOST, "expressions": {}, "sounds": {}})
+        got = _safe_avatar({**_GHOST, "motions": {}, "sounds": {}})
         assert got == _GHOST
 
     @pytest.mark.parametrize(
@@ -1091,19 +1072,18 @@ class TestSafeAvatarPerStateOverrides:
         [
             "x",
             7,
-            ["working"],
+            ["done"],
             None,
-            {"working": 5},
-            {"working": "squint"},
-            {"working": ["squint"]},
-            {"working": {"eyes": 5}},
-            {"working": {"eyes": ["a"]}},
+            {"done": 5},
+            {"done": ["bounce"]},
+            {"done": {"axis": "bounce"}},
+            {"done": True},
         ],
     )
-    def test_junk_expressions_never_collapse_a_valid_avatar(self, junk):
-        got = _safe_avatar({**_GHOST, "expressions": junk})
+    def test_junk_motions_never_collapse_a_valid_avatar(self, junk):
+        got = _safe_avatar({**_GHOST, "motions": junk})
         assert got["traits"] == _GHOST["traits"]
-        assert "expressions" not in got
+        assert "motions" not in got
 
     @pytest.mark.parametrize(
         "junk",
@@ -1114,18 +1094,62 @@ class TestSafeAvatarPerStateOverrides:
         assert got["traits"] == _GHOST["traits"]
         assert "sounds" not in got
 
-    def test_junk_never_collapses_a_valid_image(self):
-        got = _safe_avatar({"kind": "image", "v": 3, "expressions": "x", "sounds": 9})
-        assert got == {"kind": "image", "v": 3}
-
-    def test_stored_overrides_survive_a_config_load(self):
-        avatar = {**_GHOST, "expressions": _EXPRESSIONS, "sounds": _SOUNDS}
+    def test_stored_reactions_survive_a_config_load(self):
+        avatar = {**_GHOST, "motions": _MOTIONS, "sounds": _SOUNDS}
         cfg = _load_from_dict({"agents": {"radar": {"kiro_agent": "kirocrew", "avatar": avatar}}})
         assert cfg.agents["radar"].avatar == avatar
 
 
-class TestPerStateOverridesRoundTripThroughTheEndpoints:
-    """PUT stores the per-state keys and GET hands them back, on both kinds."""
+class TestReactionsBelongToTheirOwnTier:
+    """Each tier owns its motion and its sound, so a foreign key is stripped.
+
+    A picture is static and silent: it has no animation to play and no cue of its
+    own. A pack carries BOTH itself -- its art comes from
+    ``GET /api/appearances/{id}/slot/{slot}`` and its audio from
+    ``GET /api/appearances/{id}/sound/{state}`` -- so a reaction stored on the
+    crew would be a second, conflicting answer to a question the pack has
+    already answered. Stripping rather than refusing is the same forgiveness
+    every other field here has: a hand-written or version-skewed record must not
+    cost the crew its face.
+    """
+
+    _IMAGE = {"kind": "image", "v": 17, "file": "0123456789abcdef.png"}
+
+    def test_an_image_is_static_and_silent(self):
+        got = _safe_avatar({**self._IMAGE, "motions": _MOTIONS, "sounds": _SOUNDS})
+        assert got == self._IMAGE
+
+    def test_a_pack_carries_its_own_reactions_so_the_record_carries_none(self):
+        got = _safe_avatar({"kind": "pack", "id": "aurora", "motions": _MOTIONS, "sounds": _SOUNDS})
+        assert got == {"kind": "pack", "id": "aurora"}
+
+    @pytest.mark.parametrize(
+        "record",
+        [
+            {**_GHOST, "expressions": _LEGACY_EXPRESSIONS},
+            {"kind": "image", "v": 17, "expressions": _LEGACY_EXPRESSIONS},
+            {"kind": "pack", "id": "aurora", "expressions": _LEGACY_EXPRESSIONS},
+        ],
+    )
+    def test_a_legacy_expressions_key_is_stripped_on_every_tier(self, record):
+        """The retired per-state eyes/mouth pick loads as though it were never there.
+
+        Silently, on every tier: an install that carried one predates this shape,
+        and a load that refused it would cost the crew its whole avatar over a
+        key nothing reads any more.
+        """
+        got = _safe_avatar(record)
+        assert "expressions" not in got
+        assert got["kind"] == record["kind"]
+
+    def test_a_stripped_reaction_still_leaves_a_loadable_record(self):
+        avatar = {"kind": "pack", "id": "aurora", "sounds": _SOUNDS, "expressions": {"done": {}}}
+        cfg = _load_from_dict({"agents": {"nova": {"kiro_agent": "kirocrew", "avatar": avatar}}})
+        assert cfg.agents["nova"].avatar == {"kind": "pack", "id": "aurora"}
+
+
+class TestGhostReactionsRoundTripThroughTheEndpoints:
+    """PUT stores the ghost's reactions and GET hands them back."""
 
     @staticmethod
     def _app():
@@ -1169,12 +1193,12 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
     async def test_ghost_crew_round_trip(self, seeded_agent):
         from aiohttp.test_utils import TestClient, TestServer
 
-        avatar = {**_GHOST, "expressions": _EXPRESSIONS, "sounds": _SOUNDS}
+        avatar = {**_GHOST, "motions": _MOTIONS, "sounds": _SOUNDS}
         async with TestClient(TestServer(self._app())) as client:
             put = await client.put(f"/api/agents/{seeded_agent}", json={"avatar": avatar})
             assert put.status == 200
             got = await self._roster_avatar_of(client, seeded_agent)
-        assert got["expressions"] == _EXPRESSIONS
+        assert got["motions"] == _MOTIONS
         assert got["sounds"] == _SOUNDS
         assert KiroCrewConfig.load().agents[seeded_agent].avatar == avatar
 
@@ -1182,7 +1206,7 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
     async def test_ghost_crew_without_traits_round_trip(self, seeded_agent):
         from aiohttp.test_utils import TestClient, TestServer
 
-        avatar = {"kind": "ghost", "expressions": _EXPRESSIONS, "sounds": _SOUNDS}
+        avatar = {"kind": "ghost", "motions": _MOTIONS, "sounds": _SOUNDS}
         async with TestClient(TestServer(self._app())) as client:
             put = await client.put(f"/api/agents/{seeded_agent}", json={"avatar": avatar})
             assert put.status == 200, await put.json()
@@ -1191,12 +1215,12 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
         assert KiroCrewConfig.load().agents[seeded_agent].avatar == avatar
 
     @pytest.mark.asyncio
-    async def test_image_crew_keeps_its_sounds_across_the_commit(self, seeded_agent):
-        """The commit rebuilds the record from the stamp and pin.
+    async def test_a_committed_picture_is_stored_static_and_silent(self, seeded_agent):
+        """The commit rebuilds the record from the stamp and pin, and nothing else.
 
-        A per-state key is validated INPUT, not commit output, so it has to be
-        carried across that rebuild -- otherwise saving a sound on a crew that
-        wears a picture returns 200 and stores nothing.
+        A reaction named on a picture payload is dropped by the validator, and the
+        rebuild carries nothing across -- so the two answers cannot disagree, and
+        a 200 never reports a stored cue the picture tier does not play.
         """
         from aiohttp.test_utils import TestClient, TestServer
 
@@ -1210,7 +1234,7 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
                         "kind": "image",
                         "promote": True,
                         "token": (await up.json())["token"],
-                        "expressions": _EXPRESSIONS,
+                        "motions": _MOTIONS,
                         "sounds": _SOUNDS,
                     }
                 },
@@ -1218,14 +1242,13 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
             assert put.status == 200, await put.json()
             got = await self._roster_avatar_of(client, seeded_agent)
         assert got["kind"] == "image"
-        assert got["expressions"] == _EXPRESSIONS
-        assert got["sounds"] == _SOUNDS
+        assert set(got) == {"kind", "v", "file"}
         stored = KiroCrewConfig.load().agents[seeded_agent].avatar
-        assert stored["expressions"] == _EXPRESSIONS and stored["sounds"] == _SOUNDS
+        assert set(stored) == {"kind", "v", "file"}
 
     @pytest.mark.asyncio
-    async def test_keeping_the_current_picture_carries_the_overrides(self, seeded_agent):
-        """The other image branch: no fresh upload, only per-state edits."""
+    async def test_keeping_the_current_picture_keeps_the_pin_and_stays_silent(self, seeded_agent):
+        """The other image branch: no fresh upload, and still nothing to carry."""
         from aiohttp.test_utils import TestClient, TestServer
 
         async with TestClient(TestServer(self._app())) as client:
@@ -1249,13 +1272,13 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
             assert again.status == 200, await again.json()
         stored = KiroCrewConfig.load().agents[seeded_agent].avatar
         assert stored["file"] == pin, "the keep-current-picture branch lost the pin"
-        assert stored["sounds"] == {"done": "pop"}
+        assert "sounds" not in stored
 
     @pytest.mark.asyncio
     async def test_a_ghost_carrying_only_junk_is_still_refused(self, seeded_agent):
         """The 400 gate is unchanged for a payload with no surviving content.
 
-        A traits-less ghost is now a legal shape, so this case is worth pinning
+        A traits-less ghost is a legal shape, so this case is worth pinning
         deliberately: when nothing in it survives validation it is a mistyped
         payload, not an intentional reset, and refusing it is what keeps it from
         silently deleting a crew's committed picture. Same answer a bare
@@ -1279,14 +1302,14 @@ class TestPerStateOverridesRoundTripThroughTheEndpoints:
         }
 
     @pytest.mark.asyncio
-    async def test_junk_per_state_values_are_not_a_400(self, seeded_agent):
+    async def test_junk_reaction_values_are_not_a_400(self, seeded_agent):
         """Same forgiveness traits already get -- strip, never refuse."""
         from aiohttp.test_utils import TestClient, TestServer
 
         async with TestClient(TestServer(self._app())) as client:
             resp = await client.put(
                 f"/api/agents/{seeded_agent}",
-                json={"avatar": {**_GHOST, "expressions": "x", "sounds": ["chime"]}},
+                json={"avatar": {**_GHOST, "motions": "x", "sounds": ["chime"]}},
             )
             assert resp.status == 200, await resp.json()
         assert KiroCrewConfig.load().agents[seeded_agent].avatar == _GHOST
@@ -1377,26 +1400,19 @@ class TestSafeAvatarPackKind:
         assert store_mod._safe_id("aurora-1") == safe_pack_id("aurora-1")
         assert store_mod._safe_id("a/b") is safe_pack_id("a/b") is None
 
-    def test_sounds_are_kept(self):
-        assert _safe_avatar({**_PACK, "sounds": {"done": "chime"}}) == {
-            **_PACK,
-            "sounds": {"done": "chime"},
-        }
+    def test_the_record_is_the_id_and_nothing_else(self):
+        """A pack answers every per-state question itself.
 
-    def test_expressions_are_kept_even_though_a_pack_ignores_them(self):
-        """Stored for symmetry with the other kinds, not because a pack draws them.
-
-        A pack's art is its own files, so there is no eyes/mouth axis to move --
-        but dropping the key would mean switching a crew from ghost to pack and
-        back silently lost the expressions it had.
+        Its art is served per state by ``GET /api/appearances/{id}/slot/{slot}``
+        and its audio by ``GET /api/appearances/{id}/sound/{state}``, so a
+        reaction stored beside the id would be a second answer that the renderer
+        would then have to pick between.
         """
-        assert _safe_avatar({**_PACK, "expressions": {"working": {"eyes": "wide"}}}) == {
-            **_PACK,
-            "expressions": {"working": {"eyes": "wide"}},
-        }
+        assert _safe_avatar({**_PACK, "motions": {"done": "nod"}}) == _PACK
+        assert _safe_avatar({**_PACK, "sounds": {"done": "chime"}}) == _PACK
 
     def test_junk_per_state_values_do_not_cost_the_pack(self):
-        assert _safe_avatar({**_PACK, "expressions": "x", "sounds": ["chime"]}) == _PACK
+        assert _safe_avatar({**_PACK, "motions": "x", "sounds": ["chime"]}) == _PACK
 
     def test_validation_never_touches_the_disk(self):
         """Config load must not stat anything.
@@ -1543,11 +1559,8 @@ class TestPackAvatarThroughTheEndpoints:
         ("faceless", "expected"),
         [
             ({}, _PACK),
-            ({"kind": "ghost", "sounds": {"done": "ding"}}, {**_PACK, "sounds": {"done": "ding"}}),
-            (
-                {"kind": "ghost", "expressions": {"working": {"eyes": "wink"}}},
-                {**_PACK, "expressions": {"working": {"eyes": "wink"}}},
-            ),
+            ({"kind": "ghost", "sounds": {"done": "ding"}}, _PACK),
+            ({"kind": "ghost", "motions": {"done": "nod"}}, _PACK),
         ],
     )
     async def test_a_faceless_save_keeps_the_pack(self, seeded_agent, faceless, expected):
@@ -1556,9 +1569,10 @@ class TestPackAvatarThroughTheEndpoints:
         `CrewAvatarBuilder` rebuilds the override from a closed ghost/picture
         shape, so a pack-wearing crew opens as the name-derived face and ANY
         save -- a model change, a colour -- submits `{}` (or a faceless ghost
-        when the record carried reactions). Read as a reset, that silently
-        clears a pack the user set through the API. The pack is kept and the
-        save's reactions ride onto it until the picker can show the pack.
+        carrying the ghost tier's own reactions). Read as a reset, that silently
+        clears a pack the user set through the API. The pack is kept and kept
+        ALONE: a ghost reaction riding onto it would answer a question the pack
+        already answers with its own art and its own audio.
         """
         from aiohttp.test_utils import TestClient, TestServer
 

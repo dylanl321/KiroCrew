@@ -439,8 +439,15 @@ class TestAvatarIsShapeAllowlistedNotMasked:
         assert _carries_mask(avatar["traits"]["eyes"]), "a user-authored trait was not masked"
         assert self.PROBE not in json.dumps(row)
 
-    def test_a_credential_shaped_expression_value_is_masked(self) -> None:
-        """The per-state axes carry user text too, so they mask like traits."""
+    def test_the_pinned_reaction_names_survive_intact(self) -> None:
+        """The direction that rots. A reaction NAMES a shipped animation or preset.
+
+        ``_safe_motions`` and ``_safe_sounds`` pin both to a closed vocabulary, so
+        neither is user-authored text: masking one would break the reaction and
+        buy nothing, the same reason the regex-pinned ``file`` is left alone. A
+        credential-shaped value cannot survive validation to reach the roster at
+        all -- it is dropped, which is stronger than masking it.
+        """
         row = _agent_roster_row(
             "probe",
             "global",
@@ -451,7 +458,7 @@ class TestAvatarIsShapeAllowlistedNotMasked:
                         **{f.name: "" for f in dataclasses.fields(KiroCrewAgentConfig)},
                         "avatar": {
                             "kind": "ghost",
-                            "expressions": {"working": {"eyes": self.PROBE}},
+                            "motions": {"done": "bounce", "error": self.PROBE},
                             "sounds": {"working": "chime"},
                         },
                     }
@@ -460,11 +467,9 @@ class TestAvatarIsShapeAllowlistedNotMasked:
             redact=False,
         )
         avatar = cast(dict, row["avatar"])
-        assert _carries_mask(avatar["expressions"]["working"]["eyes"])
-        assert self.PROBE not in json.dumps(row)
-        # The direction that rots: a cue name is pinned to a shipped preset by
-        # `_safe_sounds`, so masking it would break the cue and buy nothing.
+        assert avatar["motions"] == {"done": "bounce"}
         assert avatar["sounds"] == {"working": "chime"}
+        assert self.PROBE not in json.dumps(row)
 
     def test_the_pinned_file_and_kind_survive_intact(self) -> None:
         """The direction that rots. `file` is regex-pinned, so it needs no mask.

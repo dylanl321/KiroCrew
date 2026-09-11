@@ -11,6 +11,7 @@ These tests hold:
 * the dashboard routes work with the Companion app disabled or absent;
 * every route is owner-gated, and the audit never decides the request;
 * untrusted SVG is served inert;
+* a pack's own per-state audio is served from the bytes it really carries;
 * deleting a pack a crew still wears is refused, by name, unless forced.
 """
 
@@ -31,6 +32,11 @@ from kiro_crew.config.loader import KiroCrewAgentConfig, KiroCrewConfig
 from kiro_crew.dashboard import appearances as shared
 
 _PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+
+#: A structurally recognisable WAV. The sniffer reads the RIFF/WAVE header, and
+#: nothing here needs it to be playable.
+_WAV = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
 
 
 def _b64(raw: bytes) -> str:
@@ -359,6 +365,153 @@ class TestSlotRoute:
             assert second.headers["X-Resolved-Slot"] == "idle"
 
 
+class TestSoundRoute:
+    """The pack tier's audio counterpart of the slot route.
+
+    A pack supplies its own per-state art AND its own per-state sound, which is
+    why a crew wearing one stores no cue of its own. What the route must never do
+    is answer with a type the bytes contradict: a manifest is hand-editable, so
+    the served type comes from sniffing the file.
+    """
+
+    @staticmethod
+    def _seed_cue(ident="aurora", *, state="done", filename="done.wav", content=None):
+        pack = _seed_pack(shared.library_dir(), ident)
+        manifest = json.loads((pack / "manifest.json").read_text("utf-8"))
+        manifest["sounds"] = {state: filename}
+        (pack / "manifest.json").write_text(json.dumps(manifest), "utf-8")
+        (pack / filename).write_text(_b64(_WAV) if content is None else content, "utf-8")
+        return pack
+
+    @pytest.mark.asyncio
+    async def test_a_present_cue_is_served_as_audio(self):
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/aurora/sound/done")
+            assert resp.status == 200
+            assert resp.headers["Content-Type"].startswith("audio/wav")
+            assert resp.headers["Cache-Control"] == "private, max-age=60"
+            assert resp.headers["X-Content-Type-Options"] == "nosniff"
+            assert await resp.read() == _WAV
+
+    @pytest.mark.asyncio
+    async def test_the_detail_payload_says_which_states_to_ask_for(self):
+        """Presence in the payload and an answer from the route cannot disagree.
+
+        Both read one function, so a state the payload advertises is a state the
+        route can serve -- which is what lets the client fetch without probing.
+        """
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            detail = await (await client.get("/api/appearances/aurora")).json()
+            assert detail["sounds"] == {"done": True}
+            for state in detail["sounds"]:
+                assert (await client.get(f"/api/appearances/aurora/sound/{state}")).status == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", ["working", "error", "idle", "nope", "x" * 80])
+    async def test_a_state_with_no_cue_is_a_404(self, state):
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get(f"/api/appearances/aurora/sound/{state}")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "sound_not_found"
+
+    @pytest.mark.asyncio
+    async def test_a_pack_with_no_cues_at_all_is_a_404(self):
+        _seed_pack(shared.library_dir(), "aurora")
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/aurora/sound/done")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "sound_not_found"
+
+    @pytest.mark.asyncio
+    async def test_a_missing_pack_is_a_404_too(self):
+        """Same answer as an absent cue, deliberately.
+
+        Telling the two apart would hand a caller probing for traversal a signal
+        it does not need, and a deleted pack is the ordinary case.
+        """
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/gone/sound/done")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "sound_not_found"
+
+    @pytest.mark.asyncio
+    async def test_the_builtin_carries_no_audio(self):
+        """It ships inside the frontend bundle, so it has no directory to keep one.
+
+        A distinct code, because "this pack has no files" is not "this pack is
+        missing" -- the same answer its slot route gives.
+        """
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get(f"/api/appearances/{ap.DEFAULT_PACK}/sound/done")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "builtin_no_content"
+
+    @pytest.mark.asyncio
+    async def test_a_cue_whose_bytes_are_not_audio_is_dropped(self):
+        """The filename claimed ``.wav``; the bytes are a PNG.
+
+        Serving them as ``audio/wav`` would hand the browser a content type its
+        own bytes contradict, on content a third party authored.
+        """
+        self._seed_cue(content=_b64(_PNG))
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/aurora/sound/done")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "sound_not_found"
+
+    @pytest.mark.asyncio
+    async def test_an_oversize_cue_is_dropped_rather_than_streamed(self):
+        from kiro_crew.appearance_packs.sounds import MAX_SOUND_BYTES
+
+        big = b"RIFF" + b"\x00" * 4 + b"WAVE" + b"\x00" * (MAX_SOUND_BYTES + 1)
+        self._seed_cue(content=_b64(big))
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/aurora/sound/done")
+            assert resp.status == 404
+            assert (await resp.json())["code"] == "sound_not_found"
+
+    @pytest.mark.asyncio
+    async def test_a_repeat_fetch_revalidates_with_the_etag(self):
+        """Audio is the largest thing this surface serves; a 304 is nearly free."""
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            first = await client.get("/api/appearances/aurora/sound/done")
+            etag = first.headers["ETag"]
+            again = await client.get(
+                "/api/appearances/aurora/sound/done", headers={"If-None-Match": etag}
+            )
+            assert again.status == 304
+
+    @pytest.mark.asyncio
+    async def test_no_csp_is_needed_because_audio_is_not_markup(self):
+        """The SVG policy is for markup that can carry a script; audio cannot."""
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            resp = await client.get("/api/appearances/aurora/sound/done")
+            assert "Content-Security-Policy" not in resp.headers
+
+    @pytest.mark.asyncio
+    async def test_a_successful_read_is_audited(self, monkeypatch):
+        """Same obligation every read on this surface carries.
+
+        The shared gate records a DENIAL and returns None on success, so the
+        accepted decision is recorded by the handler -- half a decision in the log
+        lets a reader see who was turned away and not who got in.
+        """
+        seen: list[dict] = []
+        recorder = types.SimpleNamespace(log_api_access=lambda **kw: seen.append(kw))
+        monkeypatch.setattr("kiro_crew.dashboard.handlers.appearances._sel", lambda: recorder)
+        self._seed_cue()
+        async with TestClient(TestServer(_app())) as client:
+            assert (await client.get("/api/appearances/aurora/sound/done")).status == 200
+        assert "appearances.sound" in {
+            e["operation"] for e in seen if e.get("outcome") == "success"
+        }
+
+
 class TestTheSlotRouteReadsOneFile:
     """Serving one frame must not cost the whole pack. ``pack_detail`` inlines
     every file per slot that names it; the slot route reads the manifest and the
@@ -434,7 +587,12 @@ class TestAnUnreadableLibraryIsA503NotA500:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "path",
-        ["/api/appearances", "/api/appearances/aurora", "/api/appearances/aurora/slot/idle"],
+        [
+            "/api/appearances",
+            "/api/appearances/aurora",
+            "/api/appearances/aurora/slot/idle",
+            "/api/appearances/aurora/sound/done",
+        ],
     )
     async def test_every_read_route_answers_library_unavailable(self, broken_store, path):
         async with TestClient(TestServer(_app())) as client:
@@ -788,6 +946,7 @@ class TestOwnerGate:
             ("get", "/api/appearances"),
             ("get", "/api/appearances/aurora"),
             ("get", "/api/appearances/aurora/slot/idle"),
+            ("get", "/api/appearances/aurora/sound/done"),
             ("post", "/api/appearances/import"),
             ("post", "/api/appearances/petdex/fetch"),
             ("delete", "/api/appearances/aurora"),
