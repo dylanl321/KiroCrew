@@ -46,6 +46,7 @@ from kiro_crew.apps.manager import (
 from kiro_crew.apps.scaffold import scaffold_app
 from kiro_crew.cli_server import _marker_port, resolve_client_port
 from kiro_crew.config import config_dir
+from kiro_crew.config.loader import workspace_dir_is_declared
 from kiro_crew.config.loader import (
     ConfigReadError,
     KiroCrewAgentConfig,
@@ -500,6 +501,9 @@ def _handle_workspace(args: argparse.Namespace) -> None:
                 )
                 print("Error: cannot use config root as workspace directory", file=sys.stderr)
                 sys.exit(1)
+            # Defined for BOTH branches, so the destination is never an
+            # undefined name in the rollback closure below.
+            dst_path = config_dir() / ws_dir
         # Check for directory collision with existing workspaces
         existing_dirs = {ws.dir for ws in cfg.workspaces.values()}
         if ws_dir in existing_dirs:
@@ -535,6 +539,35 @@ def _handle_workspace(args: argparse.Namespace) -> None:
                         "choose another dir or remove it first"
                     ) from exc
                 install_state["installed"] = True
+            # A create with no copy source still needs its directory to EXIST:
+            # the config entry alone yields a workspace every consumer trips
+            # over, and the V2 private-memory layout refuses to start ANY
+            # private member while one declared workspace directory is missing.
+            # Atomic mkdir: EEXIST means the directory was already there, which
+            # this create accepts.
+            #
+            # Deliberately NOT rolled back when the config write fails, unlike
+            # the staged tree above: an empty directory left behind is inert and
+            # the next create at that path adopts it, while removing it is what
+            # would be unsafe -- a concurrent create can already have adopted
+            # and registered this very directory by then.
+            elif not dst_path.is_dir():
+                try:
+                    os.mkdir(dst_path)
+                except FileExistsError as exc:
+                    # is_dir() was false just above, so this path exists as
+                    # something that is NOT a directory -- unless a racer created
+                    # the directory in between. Re-read to tell those apart; only
+                    # a directory can serve as a workspace.
+                    if not dst_path.is_dir():
+                        raise _CliConflict(
+                            f"'{ws_dir}' exists and is not a directory; "
+                            "choose another dir or remove it first"
+                        ) from exc
+                except OSError as exc:
+                    raise _CliConflict(
+                        f"directory '{ws_dir}' could not be created: {exc.strerror or exc}"
+                    ) from exc
             workspaces[args.name] = dataclasses.asdict(WorkspaceConfig(dir=ws_dir))
             return doc
 
@@ -544,7 +577,19 @@ def _handle_workspace(args: argparse.Namespace) -> None:
 
         def _rollback_install() -> None:
             if install_state["installed"]:
-                shutil.rmtree(dst_path, ignore_errors=True)
+                # Same ownership question the dashboard handler asks, through the
+                # same shared check: ``publish_dir_noreplace`` proves this
+                # destination did not exist when it landed, which does not prove it
+                # is still this request's alone. A concurrent create adopts an
+                # existing directory and registers it, and reclaiming the tree then
+                # leaves THAT workspace declared with no directory.
+                if workspace_dir_is_declared(dst_path, base=config_dir()):
+                    print(
+                        f"Note: leaving '{dst_path}' in place; a workspace entry " "declares it.",
+                        file=sys.stderr,
+                    )
+                else:
+                    shutil.rmtree(dst_path, ignore_errors=True)
             elif staged_path is not None:
                 shutil.rmtree(staged_path, ignore_errors=True)
 
@@ -610,6 +655,16 @@ def _handle_workspace(args: argparse.Namespace) -> None:
                 if args.dir in used:
                     raise _CliConflict(
                         f"directory '{args.dir}' is already used by another workspace"
+                    )
+                # Same materialize-or-refuse invariant the create path holds: the
+                # V2 private-memory layout resolves EVERY declared workspace
+                # strictly, so rebinding to a path that is not a directory arms a
+                # refusal for every private member. An update names a destination
+                # the owner already chose, so it refuses rather than creating one.
+                if not (config_dir() / args.dir).is_dir():
+                    raise _CliConflict(
+                        f"directory '{args.dir}' does not exist or is not a "
+                        "directory; create it first"
                     )
                 entry["dir"] = args.dir
             return doc

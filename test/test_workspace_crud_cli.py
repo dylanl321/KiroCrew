@@ -95,6 +95,10 @@ class TestWorkspaceArgparse:
         with (
             unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
             unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+            # cli_commands binds config_dir at import, so the loader patch above
+            # does not reach it. Create now materializes its directory, so that
+            # binding has to point at a real one.
+            unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
             unittest.mock.patch(
                 "sys.argv",
                 [
@@ -112,6 +116,29 @@ class TestWorkspaceArgparse:
         out = capsys.readouterr().out
         assert "Created workspace: newws" in out
 
+    def test_create_materializes_the_workspace_directory(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A registered workspace whose directory is absent is a latent outage.
+
+        The V2 private-memory layout resolves EVERY declared workspace strictly
+        and refuses to start ANY private member when one is missing, so a create
+        that writes only the config entry breaks members unrelated to it.
+        """
+        cfg_path = _write_config(tmp_path, _base_config())
+        with (
+            unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
+            unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+            unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
+            unittest.mock.patch(
+                "sys.argv",
+                ["kirocrew", "workspace", "create", "--name", "newws"],
+            ),
+        ):
+            main()
+        assert "Created workspace: newws" in capsys.readouterr().out
+        assert (tmp_path / "workspace-newws").is_dir(), "config entry without a directory"
+
     def test_create_accepts_copy_from(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -122,6 +149,9 @@ class TestWorkspaceArgparse:
         with (
             unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
             unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+            # cli_commands binds config_dir at import, so the loader patch above
+            # does not reach it -- and this create now does real filesystem work.
+            unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
             unittest.mock.patch(
                 "sys.argv",
                 [
@@ -144,9 +174,13 @@ class TestWorkspaceArgparse:
     ) -> None:
         """Req 6.3: update accepts positional name and --dir."""
         cfg_path = _write_config(tmp_path, _base_config())
+        # The destination must exist: an update REFUSES a dir that is not there,
+        # because a declared-but-missing workspace refuses every private member.
+        (tmp_path / "new-path").mkdir()
         with (
             unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
             unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+            unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
             unittest.mock.patch(
                 "sys.argv",
                 ["kirocrew", "workspace", "update", "staging", "--dir", "new-path"],
@@ -155,6 +189,27 @@ class TestWorkspaceArgparse:
             main()
         out = capsys.readouterr().out
         assert "Updated workspace: staging" in out
+
+    def test_update_refuses_a_dir_that_is_missing_or_not_a_directory(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Rebinding to an unusable path arms a fleet-wide private-memory refusal."""
+        cfg_path = _write_config(tmp_path, _base_config())
+        (tmp_path / "a-file").write_text("not a directory", encoding="utf-8")
+        for target in ("never-created", "a-file"):
+            with (
+                unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
+                unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+                unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
+                unittest.mock.patch(
+                    "sys.argv",
+                    ["kirocrew", "workspace", "update", "staging", "--dir", target],
+                ),
+                pytest.raises(SystemExit) as exc_info,
+            ):
+                main()
+            assert exc_info.value.code == 1, target
+            assert "create it first" in capsys.readouterr().err, target
 
     def test_delete_accepts_positional_name(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -622,6 +677,10 @@ class TestCliCrudIsLockedDelta:
         with (
             unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=cfg_path),
             unittest.mock.patch("kiro_crew.config.loader.config_dir", return_value=tmp_path),
+            # cli_commands binds config_dir at import, so the loader patch above
+            # does not reach it. Create now materializes its directory, so that
+            # binding has to point at a real one.
+            unittest.mock.patch("kiro_crew.cli_commands.config_dir", return_value=tmp_path),
             unittest.mock.patch("sys.argv", ["kirocrew", *argv]),
         ):
             main()

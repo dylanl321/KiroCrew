@@ -44,6 +44,7 @@ from kiro_crew.config.loader import (
     config_dir,
     data_home,
     update_config_locked,
+    workspace_dir_is_declared,
 )
 from kiro_crew.dashboard import part_stream, upload_destination
 from kiro_crew.dashboard.chat_utils import (
@@ -1541,6 +1542,15 @@ def _resolve_ws_dir(d: str) -> Path:
     return p.resolve() if p.is_absolute() else (data_home() / d).resolve()
 
 
+def _workspace_dir_is_declared(candidate: Path) -> bool:
+    """This handler's seam onto the shared declared-directory check.
+
+    Relative entries resolve against this module's ``data_home``, which is the
+    name every other path in this handler is built from.
+    """
+    return workspace_dir_is_declared(candidate, base=data_home())
+
+
 class _WorkspaceConflict(Exception):
     """A workspace precondition failed against FRESH state inside the lock.
 
@@ -1790,6 +1800,50 @@ async def api_workspaces_create(request: web.Request) -> web.Response:
                     "workspace_dir_occupied",
                 ) from exc
             install_state["installed"] = True
+        # A create with no copy source still needs its directory to EXIST. The
+        # config entry alone yields a workspace that every consumer resolving it
+        # trips over, and the V2 private-memory layout refuses to start ANY
+        # private member while one declared workspace directory is missing --
+        # so an unmaterialized entry here is not inert, it is a latent outage
+        # for members that have nothing to do with this workspace.
+        #
+        # Atomic mkdir, not exists()-then-mkdir: EEXIST is the filesystem
+        # itself saying the directory was already there -- an owner pointing a
+        # new workspace at a folder they already keep, or a racer -- which this
+        # create accepts. Only the directory itself is created; a missing PARENT
+        # is refused rather than fabricated, so a mistyped nested dir fails here
+        # instead of registering an entry that breaks a private member later.
+        #
+        # Deliberately NOT rolled back when the config write fails. The
+        # directory is reachable only through the config entry written in this
+        # same locked section, so what a failure leaves is an empty directory
+        # nothing references, which a later create adopts. Removing it is the
+        # unsafe option: by the time a rollback runs, a concurrent create can
+        # have adopted this very directory and registered it.
+        elif not final_path.is_dir():
+            try:
+                os.mkdir(final_path)
+            except FileExistsError as exc:
+                # is_dir() was false just above, so the path exists as something
+                # that is NOT a directory -- a file, a socket, a dangling link --
+                # unless a racer created the directory in between. Re-read to
+                # tell those apart: a directory now is the state this create
+                # wanted, while anything else cannot serve as a workspace, and
+                # registering it would write back exactly the unusable entry
+                # this change exists to prevent.
+                if not final_path.is_dir():
+                    raise _WorkspaceConflict(
+                        409,
+                        f"'{ws_dir}' exists and is not a directory; choose another "
+                        "dir or remove it first",
+                        "workspace_dir_not_a_directory",
+                    ) from exc
+            except OSError as exc:
+                raise _WorkspaceConflict(
+                    409,
+                    f"Directory '{ws_dir}' could not be created: {exc.strerror or exc}",
+                    "workspace_dir_uncreatable",
+                ) from exc
         workspaces[name] = asdict(WorkspaceConfig(dir=ws_dir))
         return doc
 
@@ -1817,7 +1871,26 @@ async def api_workspaces_create(request: web.Request) -> web.Response:
         # drop it. Both off the loop. The rollback can only remove a tree
         # this request created (see the install invariant above).
         if install_state["installed"] and install_dst is not None:
-            await asyncio.to_thread(shutil.rmtree, install_dst, ignore_errors=True)
+            # ``publish_dir_noreplace`` proves this destination did not exist when
+            # it landed, which is not sufficient to call it exclusively this
+            # request's: a concurrent plain create adopts an existing directory,
+            # and having also registered it, the entry it wrote points here.
+            # Deleting the tree then leaves THAT workspace declared with no
+            # directory -- the exact state the private-memory layout refuses on,
+            # for a workspace this failing request does not own. So re-read the
+            # committed configuration and only reclaim a destination nothing
+            # declares.
+            if not await asyncio.to_thread(_workspace_dir_is_declared, install_dst):
+                await asyncio.to_thread(shutil.rmtree, install_dst, ignore_errors=True)
+            else:
+                # Withholding leaves a full copied tree with nothing pointing at
+                # it, so say where: a silent orphan is indistinguishable from a
+                # leak, and the owner needs the path to reclaim it.
+                logger.warning(
+                    "workspace create rollback withheld: %s is declared by a "
+                    "workspace entry; the copied tree is left in place",
+                    install_dst,
+                )
         elif staged_path is not None:
             await asyncio.to_thread(shutil.rmtree, staged_path, ignore_errors=True)
         raise
@@ -1922,6 +1995,20 @@ async def api_workspaces_update(request: web.Request) -> web.Response:
                     409,
                     f"Directory '{body['dir']}' is already used by another workspace",
                     "workspace_dir_in_use",
+                )
+            # Same materialize-or-refuse invariant the create path holds: the V2
+            # private-memory layout resolves EVERY declared workspace strictly, so
+            # rebinding to a path that is not a directory arms a refusal for every
+            # private member, including members bound to other workspaces. An
+            # update names a destination the owner already chose, so it refuses
+            # rather than creating one -- creating is the create path's job, and
+            # this transaction has no rollback for a directory it made.
+            if not new_resolved.is_dir():
+                raise _WorkspaceConflict(
+                    409,
+                    f"Directory '{body['dir']}' does not exist or is not a directory; "
+                    "create it first",
+                    "workspace_dir_unusable",
                 )
             ws["dir"] = body["dir"]
             return doc

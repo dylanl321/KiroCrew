@@ -989,7 +989,13 @@ class TestWorkspaceCopyFrom:
         assert "already used by another workspace" in capsys.readouterr().err
 
     def test_copy_from_missing_source_dir_still_registers(self, tmp_path: Path) -> None:
-        """A source workspace with no directory on disk is a config-only copy."""
+        """A source workspace with no directory on disk registers a USABLE copy.
+
+        With no source tree to publish, the create falls through to the plain
+        branch, which materializes the destination. A registered ``dir`` that does
+        not exist is precisely the entry that makes the V2 private-memory layout
+        refuse every private member.
+        """
         cfg = self._base()
         cfg_path = _seed_doc_file(tmp_path, cfg)
         with (
@@ -1002,7 +1008,7 @@ class TestWorkspaceCopyFrom:
                 _ns(workspace_action="create", name="copy3", dir=None, copy_from="src")
             )
         assert "copy3" in _read_doc(cfg_path)["workspaces"]
-        assert not (tmp_path / "workspace-copy3").exists()
+        assert (tmp_path / "workspace-copy3").is_dir()
 
 
 # ── security subcommands ──

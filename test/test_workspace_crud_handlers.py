@@ -14,6 +14,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 from body_stream_helpers import BodyStreamPayload
+from conftest import requires_symlinks
 from dashboard_owner_helpers import NoConfiguredOwner
 
 from kiro_crew.config.loader import (
@@ -158,6 +159,179 @@ class TestCreateHandler:
         mock_sel().log_api_access.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_create_materializes_the_workspace_directory(self, tmp_path: Path) -> None:
+        """A registered workspace whose directory is absent is a latent outage.
+
+        The V2 private-memory layout resolves EVERY declared workspace strictly
+        and refuses to start ANY private member when one is missing, so a create
+        that writes only the config entry breaks members unrelated to it.
+        """
+        cfg = _cfg()
+        _seed_file(tmp_path, cfg)
+        with (
+            patch(_LOAD, return_value=cfg),
+            patch(_CFGDIR, return_value=tmp_path),
+            patch(_DATAHOME, return_value=tmp_path),
+            patch(_SEL),
+        ):
+            resp = await api_workspaces_create(_req({"name": "staging"}))
+        assert resp.status == 200
+        assert (tmp_path / "workspace-staging").is_dir(), "config entry without a directory"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_write_leaves_the_created_directory_alone(self, tmp_path: Path) -> None:
+        """The plain-create directory is NOT rolled back, by design.
+
+        By the time a rollback could run, a concurrent create can already have
+        adopted that very directory through the EEXIST branch and registered it,
+        so deleting it would recreate the missing-directory entry this change
+        removes -- for a workspace that is not even this request's. An empty
+        directory left behind is inert and the next create adopts it.
+        """
+        cfg = _cfg()
+        _seed_file(tmp_path, cfg)
+
+        def _run_mutate_then_fail(_locked, *, mutate):
+            # Drive the mutate exactly as the real write does, so the mkdir runs,
+            # then fail the write itself to exercise the rollback path.
+            mutate({"workspaces": {"default": {"dir": "workspace"}}})
+            raise RuntimeError("atomic write failed")
+
+        with (
+            patch(_LOAD, return_value=cfg),
+            patch(_CFGDIR, return_value=tmp_path),
+            patch(_DATAHOME, return_value=tmp_path),
+            patch(_SEL),
+            patch(
+                "kiro_crew.dashboard.handlers.files.run_config_write",
+                new=_run_mutate_then_fail,
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await api_workspaces_create(_req({"name": "staging"}))
+        assert (tmp_path / "workspace-staging").is_dir(), (
+            "the failed write deleted a directory a concurrent create may already "
+            "have adopted and registered"
+        )
+
+    @requires_symlinks
+    @pytest.mark.asyncio
+    async def test_declared_check_matches_across_a_symlinked_home(self, tmp_path: Path) -> None:
+        """The rollback guard must compare real paths, or it never fires.
+
+        ``_resolve_ws_dir`` always resolves while a caller's candidate carries
+        whatever spelling ``$HOME`` has, so an unresolved comparison answers False
+        for every entry on a symlinked-home host -- and a guard that always
+        answers False would let the rollback delete a declared workspace, which is
+        the very failure it was added to prevent.
+        """
+        from kiro_crew.dashboard.handlers import files as files_mod
+
+        real_home = tmp_path / "real-home"
+        real_home.mkdir()
+        (real_home / "workspace-x").mkdir()
+        linked_home = tmp_path / "linked-home"
+        linked_home.symlink_to(real_home, target_is_directory=True)
+        cfg = _cfg(workspaces={"x": WorkspaceConfig(dir="workspace-x")})
+        with patch(_LOAD, return_value=cfg), patch(_DATAHOME, return_value=linked_home):
+            assert files_mod._workspace_dir_is_declared(linked_home / "workspace-x")
+
+    @pytest.mark.asyncio
+    async def test_failed_copy_create_keeps_a_destination_another_workspace_declares(
+        self, tmp_path: Path
+    ) -> None:
+        """A rollback must not reclaim a directory some other entry declares.
+
+        ``publish_dir_noreplace`` proves the destination did not exist when it
+        landed, which is not the same as it still being this request's alone: a
+        concurrent plain create adopts an existing directory and registers it.
+        Deleting the tree then leaves THAT workspace declared with no directory,
+        which is the state the private-memory layout refuses on.
+        """
+        (tmp_path / "workspace").mkdir()
+        (tmp_path / "workspace" / "notes.md").write_text("source", encoding="utf-8")
+        # The committed document a rollback re-reads: a DIFFERENT workspace has
+        # meanwhile declared the very directory this create published into.
+        committed = _cfg(
+            workspaces={
+                "default": WorkspaceConfig(dir="workspace"),
+                "adopted": WorkspaceConfig(dir="workspace-staging"),
+            },
+        )
+        _seed_file(tmp_path, committed)
+
+        def _run_mutate_then_fail(_locked, *, mutate):
+            mutate({"workspaces": {"default": {"dir": "workspace"}}})
+            raise RuntimeError("atomic write failed")
+
+        # One class attribute backs both reads, so distinguish them by ORDER: the
+        # handler's pre-lock snapshot must NOT yet see the adopted entry (or it
+        # refuses on dir collision), while the rollback's fresh re-read must.
+        snapshots = [_cfg()]
+
+        def _load(*_args, **_kwargs):
+            return snapshots.pop(0) if snapshots else committed
+
+        with (
+            patch(_CFGDIR, return_value=tmp_path),
+            patch(_DATAHOME, return_value=tmp_path),
+            patch(_SEL),
+            patch(_LOAD, side_effect=_load),
+            patch(
+                "kiro_crew.dashboard.handlers.files.run_config_write",
+                new=_run_mutate_then_fail,
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await api_workspaces_create(_req({"name": "staging", "copy_from": "default"}))
+        assert (
+            tmp_path / "workspace-staging"
+        ).is_dir(), "the rollback reclaimed a directory another workspace entry declares"
+
+    @pytest.mark.asyncio
+    async def test_create_refuses_a_path_that_exists_and_is_not_a_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """A file cannot serve as a workspace, so it must not be registered as one.
+
+        The mkdir raises EEXIST for a file exactly as it does for a directory;
+        swallowing it would register the unusable entry this change prevents.
+        """
+        (tmp_path / "workspace-staging").write_text("not a directory", encoding="utf-8")
+        cfg = _cfg()
+        _seed_file(tmp_path, cfg)
+        with (
+            patch(_LOAD, return_value=cfg),
+            patch(_CFGDIR, return_value=tmp_path),
+            patch(_DATAHOME, return_value=tmp_path),
+            patch(_SEL),
+        ):
+            resp = await api_workspaces_create(_req({"name": "staging"}))
+        assert resp.status == 409
+        assert b"not a directory" in resp.body
+        assert "staging" not in _read_doc(tmp_path)["workspaces"]
+
+    @pytest.mark.asyncio
+    async def test_create_adopts_an_existing_directory_without_touching_it(
+        self, tmp_path: Path
+    ) -> None:
+        """Registering a folder the owner already keeps stays legal and lossless."""
+        existing = tmp_path / "workspace-staging"
+        existing.mkdir()
+        (existing / "keep.txt").write_text("mine", encoding="utf-8")
+        cfg = _cfg()
+        _seed_file(tmp_path, cfg)
+        with (
+            patch(_LOAD, return_value=cfg),
+            patch(_CFGDIR, return_value=tmp_path),
+            patch(_DATAHOME, return_value=tmp_path),
+            patch(_SEL),
+        ):
+            resp = await api_workspaces_create(_req({"name": "staging"}))
+        assert resp.status == 200
+        assert (existing / "keep.txt").read_text(encoding="utf-8") == "mine"
+
+    @pytest.mark.asyncio
     async def test_create_with_copy_from(self, tmp_path: Path) -> None:
         cfg = _cfg()
         _seed_file(tmp_path, cfg)
@@ -219,6 +393,9 @@ class TestUpdateHandler:
     async def test_update_dir_success(self, tmp_path: Path) -> None:
         cfg = _cfg()
         _seed_file(tmp_path, cfg)
+        # The destination must exist: an update REFUSES a dir that is not there,
+        # because a declared-but-missing workspace refuses every private member.
+        (tmp_path / "new-dir").mkdir()
         with (
             patch(_LOAD, return_value=cfg),
             patch(_CFGDIR, return_value=tmp_path),
@@ -231,6 +408,27 @@ class TestUpdateHandler:
         assert resp.status == 200
         assert _read_doc(tmp_path)["workspaces"]["default"]["dir"] == "new-dir"
         mock_sel().log_api_access.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_refuses_a_dir_that_is_missing_or_not_a_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """Rebinding to an unusable path arms a fleet-wide private-memory refusal."""
+        cfg = _cfg()
+        _seed_file(tmp_path, cfg)
+        (tmp_path / "a-file").write_text("not a directory", encoding="utf-8")
+        for target in ("never-created", "a-file"):
+            with (
+                patch(_LOAD, return_value=cfg),
+                patch(_CFGDIR, return_value=tmp_path),
+                patch(_DATAHOME, return_value=tmp_path),
+                patch(_SEL),
+            ):
+                resp = await api_workspaces_update(
+                    _req({"dir": target}, match_info={"name": "default"})
+                )
+            assert resp.status == 409, target
+            assert _read_doc(tmp_path)["workspaces"]["default"]["dir"] != target
 
     @pytest.mark.asyncio
     async def test_update_path_traversal_rejected(self, tmp_path: Path) -> None:

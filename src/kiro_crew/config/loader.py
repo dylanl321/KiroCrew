@@ -1753,6 +1753,45 @@ def refresh_config_meta_stamp() -> bool:
     return wrote
 
 
+def workspace_dir_is_declared(candidate: Path, *, base: Path | None = None) -> bool:
+    """Report whether any COMMITTED workspace entry resolves to ``candidate``.
+
+    The one implementation of that question, shared by every writer that reclaims
+    a workspace directory on failure. A rollback asks it to avoid deleting a
+    directory some other request has meanwhile declared, which would leave THAT
+    workspace pointing at nothing -- the state ``_private_memory_layout`` refuses
+    on, for a workspace the failing request does not own.
+
+    Read fresh from disk, never from a caller's snapshot: a snapshot loaded before
+    the other request landed cannot answer it.
+
+    BOTH sides are compared resolved. A declared ``dir`` and a caller's candidate
+    can spell one directory differently -- most commonly because the data home is
+    reached through a symlinked ``$HOME`` -- and an unresolved comparison then
+    answers False for every entry, which is not a guard at all.
+
+    ``base`` is the directory a RELATIVE ``dir`` resolves against, so a caller that
+    already holds the home under a particular name passes it rather than having it
+    re-derived; it defaults to :func:`config_dir`.
+
+    An unreadable configuration answers True, which withholds the deletion:
+    keeping a directory nothing needs costs disk, while deleting one a workspace
+    declares costs that workspace.
+    """
+    try:
+        declared = KiroCrewConfig.load().workspaces.values()
+    except Exception:
+        return True
+    root = base if base is not None else config_dir()
+    target = Path(os.path.realpath(candidate))
+    for ws in declared:
+        raw = Path(ws.dir).expanduser()
+        entry = raw if raw.is_absolute() else root / ws.dir
+        if Path(os.path.realpath(entry)) == target:
+            return True
+    return False
+
+
 def workspace_dir_for(workspace: str | None = None) -> Path:
     """Resolve a named workspace to its directory path.
 
