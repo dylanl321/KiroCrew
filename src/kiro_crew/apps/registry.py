@@ -6841,6 +6841,57 @@ async def install_from_registry(
         # cleanup state for later gates (_checkout_preexisted /
         # _pre_pull_commit) rides on build_result — it describes the ACTIVE
         # checkout, accounting for a move-aside re-clone.
+        #
+        # UPDATE ORDERING INVARIANT (#10144): _clone_build_app mutates the LIVE
+        # source tree (app_source_dir) in place. If this app already has a
+        # running backend, that mutation races the live process — on Windows an
+        # open file handle held by a (possibly orphaned) descendant makes the
+        # pull fail with WinError 32 and can leave a half-written tree. So for an
+        # UPDATE we stop the backend and VERIFY it (and its whole owned tree, via
+        # the KILL_ON_JOB_CLOSE job closed in stop_app_backend) is down BEFORE
+        # touching the tree. Fail closed if a backend is still tracked after the
+        # stop, rather than mutating a live install. A fresh install has no live
+        # tree to protect and skips this. Deferred import avoids a module-level
+        # cycle (backend.py is imported by teardown/routes, not registry).
+        if was_installed:
+            from kiro_crew.apps.backend import (
+                spawned_backend_names,
+                stop_app_backend,
+            )
+            from kiro_crew.executors import subprocess_executor
+
+            if name in spawned_backend_names():
+                log_lines.append(f"stopping {name} backend before updating its source")
+                await asyncio.get_event_loop().run_in_executor(
+                    subprocess_executor(), stop_app_backend, name
+                )
+                # Verify the owned tree is actually gone. stop_app_backend closes
+                # the lifetime job (reaping any taskkill-missed orphan) and polls
+                # liveness; if the name is STILL tracked as a live backend, the
+                # shutdown was not verified and we must not replace the tree.
+                if name in spawned_backend_names():
+                    msg = (
+                        f"refusing to update {name!r}: its backend did not stop "
+                        "cleanly, so replacing the live install tree could corrupt "
+                        "it — retry once the backend is fully stopped"
+                    )
+                    log_lines.append(msg)
+                    try:
+                        sel().log_api_access(
+                            caller="app_install_from_registry",
+                            operation="update_shutdown_unverified",
+                            outcome="rejected",
+                            resources=f"name={name!r}",
+                        )
+                    except Exception as exc:
+                        logger.debug("SEL audit failed for %s update gate: %s", name, exc)
+                    return {
+                        "ok": False,
+                        "name": name,
+                        "error": msg,
+                        "code": "update_shutdown_unverified",
+                        "retryable": True,
+                    }
         build_result = await _clone_build_app(
             owner_designated_target or git_url,
             name,
