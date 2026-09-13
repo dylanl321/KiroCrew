@@ -1809,6 +1809,8 @@
         "cancel": "Cancel",
         "chatEmpty": "Nothing sent to {{name}} yet.",
         "diagramFrameTitle": "{{name}} diagram",
+        "discardDraft": "Discard unsaved changes",
+        "discardDraftHint": "Your unsaved changes will be permanently deleted.",
         "edit": "Edit this output",
         "edited": "Edited",
         "editorLabel": "{{name}} output, editable",
@@ -1817,8 +1819,9 @@
         "mute": "Mute {{name}}",
         "mutedHint": "Not listening to the meeting",
         "revert": "Discard my edits",
-        "revertHint": "Discard my edits and show what {{name}} wrote",
+        "revertHint": "Permanently delete my edits and show what {{name}} wrote",
         "save": "Save",
+        "saving": "Saving…",
         "send": "Send",
         "showChat": "Show chat",
         "showOutput": "Show output",
@@ -3330,7 +3333,6 @@
         "creating": "Creating",
         "directly_under_the_root": "Directly under the root",
         "inside_name": "Inside {{name}}",
-        "n_already_existed": "{{n}} already existed",
         "n_created": "{{n}} created",
         "n_failed": "{{n}} failed",
         "n_possible_sub_folders_inside_packages_above": "{{n}} possible sub-folders inside packages above",
@@ -4732,12 +4734,12 @@
       "no_matches": "No matches"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "Manage in Settings",
+      "manage_visible_models": "Manage visible models",
       "default_for_agent": "Default model for <agent/>",
       "filter_models": "Filter models",
       "model_list": "Model list",
-      "models": "Models",
       "pin_model_unavailable": "<model/> isn't offered right now",
-      "reasoning": "Reasoning",
       "set_default_for_agent": "Set <model/> as default model for <agent/>",
       "set_default_for_new_sessions": "Global default for new sessions…",
       "type_to_filter": "Type to filter…"
@@ -4802,6 +4804,12 @@
       "skip": "Skip",
       "tell_kiro_about_you": "Tell Kiro about you",
       "your_role": "Your role"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "Syntax highlighting is restarting. Editing remains available.",
+      "highlighting_starting_editing_available": "Syntax highlighting is starting. Editing remains available.",
+      "highlighting_unavailable_content_readable_reload": "Syntax highlighting is unavailable until you reload. Content remains readable.",
+      "highlighting_unavailable_reload": "Syntax highlighting is unavailable. Save or copy your draft, then reload to restore syntax highlighting; editing remains available."
     },
     "projectPicker": {
       "back": "Back",
@@ -6491,7 +6499,12 @@
       "untagged": "+ untagged",
       "will_be_moved_to_older_sessions": "will be moved to older sessions.",
       "within": "Within",
-      "autopilot_desc": "One job, done in steps — it plans first, you approve, then it runs stage by stage."
+      "autopilot_desc": "One job, done in steps — it plans first, you approve, then it runs stage by stage.",
+      "remote_sessions_not_shown_in_board_view_one": "{{count}} remote session is not shown in board view — board columns manage local sessions only.",
+      "remote_sessions_not_shown_in_board_view_other": "{{count}} remote sessions are not shown in board view — board columns manage local sessions only.",
+      "sessions_from_instance_unavailable": "Sessions from {{names}} are unavailable right now.",
+      "checking_remote_instances": "Checking remote instances…",
+      "remote_instances_list_unavailable": "Remote instances could not be listed, so their sessions are not shown."
     },
     "contextBreakdown": {
       "axis_bar": "bar length ∝ √chars · segments = that turn's composition",
@@ -6660,7 +6673,9 @@
       "featurePreviewsTab": {
         "inbound_webhook_tokens_registered_contexts_and_r": "Inbound webhook tokens, registered contexts, and run history. The API works; the page is not finished.",
         "open_webhooks": "Open Webhooks",
-        "webhooks": "Webhooks"
+        "webhooks": "Webhooks",
+        "remote_instance_sessions": "Remote instance sessions",
+        "merge_a_connected_remote_instances_live_sessions": "Merge a connected remote instance's live sessions into the Sessions list, each marked with a server badge. Functional, but not finished."
       }
     },
     "developerPage": {
@@ -7484,6 +7499,7 @@
         "no_episodic_entries": "No episodic entries",
         "no_events": "No events",
         "of": "of",
+        "open_embedding_model_settings": "Open embedding model settings",
         "preview": "Preview",
         "ready": "Ready!",
         "retry": "Retry",

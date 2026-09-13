@@ -2404,11 +2404,12 @@ def _windows_process_parent_map() -> dict[int, int]:
         raise OSError("Windows process enumeration failed") from exc
 
 
-def _open_process_termination_handle(pid: int) -> int | None:
-    """Open an identity-stable Windows handle suitable for later termination."""
+def _open_process_termination_handle(pid: int, *, failure: list[str] | None = None) -> int | None:
+    """Open a termination handle; optionally capture a sanitized failure locally."""
 
     if not IS_WINDOWS:
         return None
+    evidence = "unknown"
     try:
         process_terminate = 0x0001
         process_query_limited_information = 0x1000
@@ -2425,9 +2426,44 @@ def _open_process_termination_handle(pid: int) -> int | None:
             False,
             pid,
         )
-        return int(handle) if handle else None
-    except Exception:
+        if handle:
+            return int(handle)
+        # Read ctypes' saved error immediately, before any other Windows call.
+        with contextlib.suppress(Exception):
+            evidence = f"winerror={_windows_last_error()}"
+    except Exception as exc:
+        evidence = f"exception={type(exc).__name__[:64]}"
+    if failure is not None:
+        with contextlib.suppress(Exception):
+            failure.append(evidence)
+    return None
+
+
+def open_process_termination_handle(pid: int, expected_token: str) -> int | None:
+    """Open *pid* only when its exact process object matches *expected_token*.
+
+    The caller owns a returned handle and closes it with
+    :func:`close_process_handle`. Opening by numeric PID alone races PID reuse,
+    so the handle's creation FILETIME is compared with the authoritative token
+    before it is returned. A mismatch, unreadable identity, or malformed token
+    closes the handle and returns ``None``.
+    """
+
+    if type(pid) is not int or pid <= 1:
+        raise ValueError(f"open_process_termination_handle: refusing invalid pid {pid!r}")
+    handle = _open_process_termination_handle(pid)
+    if handle is None:
         return None
+    try:
+        expected_creation = int(expected_token)
+        identity = _windows_process_handle_identity(handle)
+        if identity is None or identity[0] != pid or identity[1] != expected_creation:
+            close_process_handle(handle)
+            return None
+    except (TypeError, ValueError):
+        close_process_handle(handle)
+        return None
+    return handle
 
 
 def duplicate_asyncio_process_handle(process: object) -> int | None:
@@ -2609,6 +2645,68 @@ def _windows_lineage_matches_lifetimes(
     return True
 
 
+def _windows_process_query_diagnostic(pid: int) -> str:
+    """Observe an unvalidated exact object, never acquire termination authority."""
+
+    handle = None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION only
+        if not handle:
+            return f"winerror={_windows_last_error()}"
+        return f"identity={_windows_process_handle_identity(int(handle))}"
+    except Exception as exc:
+        return f"exception={type(exc).__name__[:64]}"
+    finally:
+        if handle:
+            close_process_handle(int(handle))
+
+
+def _windows_descendant_failure_details(
+    failed: set[int],
+    first_map: Mapping[int, int],
+    fresh_map: Mapping[int, int],
+    pinned: Mapping[int, int],
+    root_identity: tuple[int, int, int | None],
+    opening_errors: Mapping[int, str],
+) -> str:
+    """Bounded, failure-only observations; nothing here certifies death or ancestry."""
+
+    root_pid = root_identity[0]
+    identities: dict[int, tuple[int, int, int | None] | None] = {}
+
+    def chain(child: int, parents: Mapping[int, int]) -> list[int]:
+        result: list[int] = []
+        while child not in result and len(result) < 8:
+            result.append(child)
+            if child == root_pid or child not in parents:
+                break
+            child = parents[child]
+        return result
+
+    details = []
+    for child in sorted(failed)[:3]:
+        first_chain = chain(child, first_map)
+        fresh_chain = chain(child, fresh_map)
+        # Only already-pinned objects on the relevant chains are queried.
+        relevant = sorted({root_pid, *first_chain, *fresh_chain}.intersection(pinned))
+        for process_pid in relevant:
+            if process_pid not in identities:
+                identities[process_pid] = _windows_process_handle_identity(pinned[process_pid])
+        facts = {process_pid: identities[process_pid] for process_pid in relevant}
+        details.append(
+            f"pid={child} open={opening_errors.get(child, 'unknown')} "
+            f"first_chain={first_chain} fresh_chain={fresh_chain} pinned={facts} "
+            f"query_unvalidated={_windows_process_query_diagnostic(child)}"
+        )
+    return (
+        f"diagnostic_only(total={len(failed)}, candidates<=3, chain<=8, "
+        f"root_at_scan={root_identity}): " + "; ".join(details)
+    )
+
+
 def descendant_termination_handles(
     pid: int,
     retained_handles: Mapping[int, int] | None = None,
@@ -2616,11 +2714,15 @@ def descendant_termination_handles(
 ) -> dict[int, int]:
     """Return exact Windows process handles for newly observed descendants.
 
-    Toolhelp exposes numeric parent PIDs, which can be recycled as soon as a
-    process exits. Every edge is therefore checked against creation/exit times
+    Toolhelp exposes numeric parent PIDs, which can be recycled after an
+    unpinned process exits. Every edge is therefore checked against creation/exit times
     from exact root, retained-parent, and newly-opened child handles in two
     snapshots. This admits a genuine child created before an immediate launcher
     exit while rejecting a tree attached to a recycled root or intermediate PID.
+    An unopenable candidate requires fresh full-snapshot absence; unreadable
+    identities or incomplete ancestry raise OSError, never certify a subset.
+    On failure only newly opened handles are closed; retained/root handles
+    stay caller-owned.
     """
 
     if type(pid) is not int or pid <= 1:
@@ -2637,20 +2739,77 @@ def descendant_termination_handles(
     first_map = _windows_process_parent_map()
     first = set(_descendants_from_parent_map(pid, first_map))
     opened: dict[int, int] = {}
-    for child_pid in sorted(first - set(retained)):
-        handle = _open_process_termination_handle(child_pid)
-        if handle is not None:
-            opened[child_pid] = handle
-    if not opened:
-        return {}
-
     try:
-        handles = {**retained, **opened, pid: root_handle}
-        first_identities = {
-            process_pid: identity
-            for process_pid, handle in handles.items()
-            if (identity := _windows_process_handle_identity(handle)) is not None
+        unopened: set[int] = set()
+        opening_errors: dict[int, str] = {}
+        # Retained handles stay open across scans, pinning each process object
+        # and preventing PID reuse even after exit; no replacement can hide here.
+        for child_pid in sorted(first - set(retained)):
+            failure: list[str] = []
+            handle = _open_process_termination_handle(child_pid, failure=failure)
+            if handle is None:
+                unopened.add(child_pid)
+                opening_errors[child_pid] = failure[0] if failure else "unknown"
+            else:
+                opened[child_pid] = handle
+        if unopened:
+            # OpenProcess failure (including ACCESS_DENIED) is not proof of
+            # death. Require a fresh, successful FULL snapshot and account for
+            # surviving entries that still reference a vanished candidate.
+            # Enumeration errors propagate; pid_exists(False) is ambiguous.
+            fresh_map = _windows_process_parent_map()
+            remaining = unopened.intersection(fresh_map)
+            if remaining:
+                errors = {child: opening_errors[child] for child in sorted(remaining)[:3]}
+                details = f"diagnostic_only=unknown; open_errors={errors}"
+                with contextlib.suppress(Exception):
+                    details = _windows_descendant_failure_details(
+                        remaining,
+                        first_map,
+                        fresh_map,
+                        {**retained, **opened, pid: root_handle},
+                        root_identity,
+                        opening_errors,
+                    )
+                raise OSError(
+                    f"Windows descendant handles unavailable: {sorted(remaining)[:3]}; {details}"
+                )
+            vanished = unopened.difference(fresh_map)
+            dangling = sorted(
+                (child, parent) for child, parent in fresh_map.items() if parent in vanished
+            )
+            if dangling:
+                # These children may have appeared only after the first scan.
+                # Numeric edges cannot prove identity or grant kill authority,
+                # but they prevent certifying this observed branch as gone.
+                raise OSError(
+                    "Windows descendant ancestry incomplete: vanished unopened parents; "
+                    f"diagnostic_only(total={len(dangling)}, child_parent_ids<=3): {dangling[:3]}"
+                )
+        if not opened:
+            return {}
+
+        handles = {
+            **{child_pid: handle for child_pid, handle in retained.items() if child_pid in first},
+            **opened,
+            pid: root_handle,
         }
+
+        def read_identities() -> dict[int, tuple[int, int, int | None]]:
+            identities: dict[int, tuple[int, int, int | None]] = {}
+            for process_pid, handle in handles.items():
+                identity = _windows_process_handle_identity(handle)
+                if identity is None:
+                    raise OSError(f"Windows descendant handle identity unreadable: {process_pid}")
+                identities[process_pid] = identity
+            return identities
+
+        first_identities = read_identities()
+        # A vanished, unpinned intermediary cannot supply a lifetime bound for
+        # a surviving child. Do not silently drop that child's unknown chain.
+        for child_pid in first.intersection(handles):
+            if first_map[child_pid] not in handles:
+                raise OSError(f"Windows descendant ancestry incomplete: {child_pid}")
         eligible = {
             child_pid
             for child_pid in opened
@@ -2664,22 +2823,40 @@ def descendant_termination_handles(
         }
 
         second_map = _windows_process_parent_map()
-        still_descendants = set(_descendants_from_parent_map(pid, second_map))
         second_identities = {
             process_pid: identity
-            for process_pid, handle in handles.items()
-            if (identity := _windows_process_handle_identity(handle)) is not None
+            for process_pid, identity in read_identities().items()
+            if (previous := first_identities.get(process_pid)) is not None
+            and identity[:2] == previous[:2]
+            and (previous[2] is None or identity[2] == previous[2])
+        }
+        for child_pid in eligible:
+            current = child_pid
+            while current != pid and current in second_identities:
+                identity = second_identities[current]
+                if current not in second_map and identity[2] is None:
+                    raise OSError(f"Windows live descendant missing from snapshot: {current}")
+                current = first_map[current]
+        # Toolhelp drops exited intermediaries even while their exact handles
+        # remain pinned. Preserve an observed edge only if its object is still
+        # identical and either its PPID agrees or its absence is explained by a
+        # proven exit. Recheck every lifetime with the newly read exit bounds;
+        # a live child born after that exit belongs to a recycled PID, not us.
+        continuous_map = {
+            process_pid: parent_pid
+            for process_pid, parent_pid in first_map.items()
+            if process_pid in second_identities
+            and (
+                second_map.get(process_pid) == parent_pid
+                or (process_pid not in second_map and second_identities[process_pid][2] is not None)
+            )
         }
         for child_pid in tuple(opened):
-            if (
-                child_pid not in eligible
-                or child_pid not in still_descendants
-                or not _windows_lineage_matches_lifetimes(
-                    child_pid,
-                    pid,
-                    second_map,
-                    second_identities,
-                )
+            if child_pid not in eligible or not _windows_lineage_matches_lifetimes(
+                child_pid,
+                pid,
+                continuous_map,
+                second_identities,
             ):
                 close_process_handle(opened.pop(child_pid))
         return opened
@@ -6602,6 +6779,155 @@ def apply_job_limits(pid: int, *, max_procs: int, max_memory_bytes: int) -> bool
                     logger.debug("CloseHandle failed", exc_info=True)
 
 
+# JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE — the LIFETIME flag that `apply_job_limits`
+# deliberately omits. Here it is the whole point: a job carrying it terminates
+# every process still assigned to it the instant the LAST handle to the job
+# closes. `own_process_tree` therefore RETURNS the open handle instead of closing
+# it, and the caller must hold it for as long as the backend should live; closing
+# it (on stop, or on gateway exit) is what reaps the tree — including a descendant
+# whose launcher already exited, which a live-tree `taskkill /T` walk cannot see.
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+
+def own_process_tree(pid: int) -> object | None:
+    """Bind *pid* and its descendants to a Crew-owned, kill-on-close Job object.
+
+    The Windows half of app-backend process-tree OWNERSHIP (distinct from
+    :func:`apply_job_limits`, which is a resource CEILING and intentionally does
+    not affect lifetime). The returned handle is the tree's lifeline: while it is
+    open the backend and every descendant run; closing it terminates the whole
+    job. The caller stores it on the backend record and closes it in the stop
+    path, so an orphaned descendant — one whose launcher exited and thus left the
+    live process tree — is still reaped, which a `taskkill /T` of the live tree
+    cannot guarantee.
+
+    Race-free ONLY when paired with :data:`CREATE_SUSPENDED`, exactly as
+    :func:`apply_job_limits` documents: assign the suspended child (no
+    descendants yet, none can escape), then :func:`resume_process_main_thread`.
+
+    Returns the OPEN job handle on success — the caller OWNS it and MUST close it
+    to reap the tree (a leak here keeps a finished app's job alive). Returns
+    ``None`` — never raises — on POSIX (where the process group owns the tree via
+    ``start_new_session``), on a non-positive pid, or on any Win32 failure; the
+    caller treats ``None`` as "no OS-level tree ownership" and falls back to the
+    process-group + taskkill path, exactly as it treats an unavailable ceiling.
+    """
+    if IS_POSIX:
+        return None
+    if pid <= 0:
+        return None
+    job = None
+    proc_handle = None
+    kernel32 = None
+    ok = False
+    # pragma: no cover — Windows-only ctypes plumbing, unmeasurable on the
+    # coverage-measuring Ubuntu shards (same rationale as apply_job_limits).
+    try:  # pragma: no cover
+        _PROCESS_SET_QUOTA = 0x0100  # noqa: N806 — Windows API constant
+        _PROCESS_TERMINATE = 0x0001  # noqa: N806 — AssignProcessToJobObject needs it
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+        ]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        # Anonymous job (NULL name): nothing else can open it by name.
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            logger.warning(
+                "SECURITY: CreateJobObject (kill-on-close) failed (err=%s); app-backend "
+                "tree ownership NOT enforced for pid %d",
+                _windows_last_error(),
+                pid,
+            )
+            return None
+
+        info = _JobObjectExtendedLimitInformation()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(
+            job,
+            _JOBOBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        ):
+            logger.warning(
+                "SECURITY: SetInformationJobObject (kill-on-close) failed (err=%s); tree "
+                "ownership NOT enforced for pid %d",
+                _windows_last_error(),
+                pid,
+            )
+            return None
+
+        proc_handle = kernel32.OpenProcess(_PROCESS_SET_QUOTA | _PROCESS_TERMINATE, False, pid)
+        if not proc_handle:
+            logger.warning(
+                "SECURITY: OpenProcess(SET_QUOTA|TERMINATE) failed for pid %d (err=%s); "
+                "tree ownership NOT enforced",
+                pid,
+                _windows_last_error(),
+            )
+            return None
+        if not kernel32.AssignProcessToJobObject(job, proc_handle):
+            logger.warning(
+                "SECURITY: AssignProcessToJobObject (kill-on-close) failed for pid %d "
+                "(err=%s); tree ownership NOT enforced",
+                pid,
+                _windows_last_error(),
+            )
+            return None
+        logger.info("App-backend tree ownership job assigned to pid %d", pid)
+        ok = True
+        return job
+    except Exception:
+        logger.warning("own_process_tree failed for pid %s", pid, exc_info=True)
+        return None
+    finally:
+        # The process handle is never needed after assignment, so close it always.
+        # The JOB handle is the caller's lifeline: close it here ONLY when the
+        # assignment did not fully succeed (else closing a KILL_ON_JOB_CLOSE job
+        # would immediately kill the backend we just started).
+        if proc_handle and kernel32 is not None:
+            try:
+                kernel32.CloseHandle(proc_handle)
+            except Exception:
+                logger.debug("CloseHandle(proc_handle) failed", exc_info=True)
+        if not ok and job and kernel32 is not None:
+            try:
+                kernel32.CloseHandle(job)
+            except Exception:
+                logger.debug("CloseHandle(job) failed", exc_info=True)
+
+
+def close_owned_tree(handle: object | None) -> None:
+    """Close a job handle from :func:`own_process_tree`, reaping the tree.
+
+    Because the job carries ``KILL_ON_JOB_CLOSE``, closing the last handle
+    terminates every process still assigned to it — the authoritative stop that
+    catches a descendant a live-tree ``taskkill`` missed. No-op on POSIX or for a
+    ``None`` handle. Never raises: a stop path must not fail on a close error.
+    """
+    if IS_POSIX or handle is None:
+        return
+    try:  # pragma: no cover — Windows-only
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle(handle)
+    except Exception:
+        logger.debug("close_owned_tree: CloseHandle failed", exc_info=True)
+
+
 _TH32CS_SNAPTHREAD = 0x00000004
 _THREAD_SUSPEND_RESUME = 0x0002
 _INVALID_HANDLE_VALUE = -1
@@ -6715,3 +7041,44 @@ def is_readonly_filesystem(path: Path) -> bool:
         return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
     except OSError:
         return False
+
+
+def ensure_owner_rwx_dirs(root: str | os.PathLike) -> None:
+    """OR owner read/write/execute onto *root* and every directory below it.
+
+    ``shutil.copytree`` preserves source modes verbatim. A copy made from a
+    hardened install source can therefore lack owner write or execute (for
+    example, mode ``0o455``). Creating a file needs a writable AND searchable
+    parent, so callers that write a marker into a fresh copy run this first.
+
+    Only directories are touched, and only by adding ``S_IRWXU``. Copied files
+    remain exactly as shipped, so a file-mode customization still diverges
+    skill fingerprints. On Windows ``os.chmod`` honours only the read-only
+    flag: adding owner write clears it, while the extra owner bits are a no-op.
+    Never raises: a directory this cannot repair surfaces as the original
+    ``PermissionError`` at the caller's write site, which every caller handles.
+    """
+
+    def _add_owner_rwx(entry: str) -> None:
+        try:
+            mode = os.lstat(entry).st_mode
+            if stat.S_ISDIR(mode) and mode & stat.S_IRWXU != stat.S_IRWXU:
+                os.chmod(entry, stat.S_IMODE(mode) | stat.S_IRWXU)
+        except OSError:
+            logger.debug("could not add owner rwx to %s", entry, exc_info=True)
+
+    top = os.fspath(root)
+    if is_link_or_junction(top):
+        return
+    _add_owner_rwx(top)
+    for dirpath, dirnames, _filenames in os.walk(top):
+        for dname in list(dirnames):
+            entry = os.path.join(dirpath, dname)
+            if is_link_or_junction(entry):
+                # os.walk(followlinks=False) skips POSIX symlinks, but a
+                # Windows junction lstats as a plain directory and WOULD be
+                # descended -- and chmodded THROUGH, touching its target
+                # tree. Prune both so the walk never leaves *root*.
+                dirnames.remove(dname)
+                continue
+            _add_owner_rwx(entry)

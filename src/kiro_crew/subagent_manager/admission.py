@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         check_memory_available,
         create_agent_folder,
         logger,
+        platform_compat,
         redact_credentials,
         redact_exfiltration_urls,
         sel,
@@ -167,6 +168,24 @@ class SpawnAdmissionCoordinator(ManagerComponent):
         # --- Redact task once for all SubagentInfo storage (raw task kept for kiro-cli prompt) ---
         _redacted_task = redact_credentials(redact_exfiltration_urls(task)[0])[0]
 
+        # Synchronous and yield-free with registration below: a spawn is either
+        # visible to the updater's busy count before the pause, or rejected after
+        # SessionManager closes admission. MagicMock-based embedders only block
+        # when they expose the literal boolean True.
+        if getattr(self._manager._sessions, "admission_closed", False) is True:
+            return self._manager._announce_rejection(
+                SubagentInfo(
+                    id=agent_id,
+                    task=_redacted_task,
+                    agent=agent,
+                    parent_session_key=parent_session_key,
+                    done=True,
+                    error="spawn refused: gateway admission is closed",
+                    batch_id=batch_id,
+                    batch_total=max(0, int(batch_total)),
+                )
+            )
+
         # Validate before queueing/starting. An explicit private identity may
         # never degrade to V1 after deletion, a config error, or a restart.
         try:
@@ -224,6 +243,39 @@ class SpawnAdmissionCoordinator(ManagerComponent):
                 batch_total=max(0, int(batch_total)),
             )
             return self._manager._announce_rejection(info)
+        if avail_gb < 0 and platform_compat.IS_LINUX:
+            # A negative reading means the guard did not run: /proc/meminfo is
+            # unreadable on the one platform where it must exist. Proceeding
+            # is the stated fail-open contract for an unmeasurable host, but
+            # on Linux it must be observable rather than indistinguishable
+            # from a healthy check. macOS/Windows structurally lack
+            # /proc/meminfo, so emitting there would fire on every spawn and
+            # drown the signal.
+            logger.warning(
+                "Subagent memory guard could not run (min %.1f GB); proceeding unchecked",
+                min_mem,
+            )
+            # Context-aware pass so a host with a companion loaded is not
+            # audited with the weaker OSS baseline (the census gate in
+            # test_security_posture.py pins the baseline site count). Imported
+            # here because this function runs rebound on the subagent module's
+            # namespace, where a module-level import in this file is inert
+            # (see _component.bind_component_globals). The slice comes AFTER
+            # redaction: slicing first could split a companion-only credential
+            # at the boundary and persist an unmatched fragment.
+            from kiro_crew.platform.context import redact_log_via_context
+
+            task_note = redact_log_via_context(_redacted_task)[:120]
+            sel().log_tool_invocation(
+                session_key=parent_session_key or "",
+                source="subagent",
+                tool_name="spawn_run",
+                outcome="memory_check_unavailable",
+                metadata={
+                    "min_gb": min_mem,
+                    "task": task_note,
+                },
+            )
 
         # --- Admission gate: refuse NEW spawns while host memory posture is
         # critical. Complements the absolute spawn_min_memory_gb floor above

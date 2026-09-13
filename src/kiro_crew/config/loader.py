@@ -3663,6 +3663,8 @@ class KiroCrewConfig:
                 embed_model_url=memory_data.get("embed_model_url", ""),
                 embed_model_path=memory_data.get("embed_model_path", ""),
                 embed_model_id=memory_data.get("embed_model_id", ""),
+                embed_model_stamp=memory_data.get("embed_model_stamp", []),
+                embed_model_legacy_ids=memory_data.get("embed_model_legacy_ids", []),
                 semantic_confidence_threshold=_safe_float(
                     memory_data.get("semantic_confidence_threshold", 0.8), 0.8, 0.0, 1.0
                 ),
@@ -4000,6 +4002,21 @@ class KiroCrewConfig:
                 auto_open_browser=dashboard_data.get("auto_open_browser", True),
                 prevent_sleep=_safe_bool(dashboard_data.get("prevent_sleep"), False),
                 quick_send=dashboard_data.get("quick_send", False),
+                model_picker_configured=(
+                    _safe_bool(dashboard_data.get("model_picker_configured"), False)
+                    if "model_picker_configured" in dashboard_data
+                    else any(
+                        isinstance(raw, str) and raw.strip() not in ("", "auto")
+                        for raw in _safe_list(dashboard_data.get("model_picker_hidden_models"))
+                    )
+                ),
+                model_picker_hidden_models=list(
+                    dict.fromkeys(
+                        model
+                        for raw in _safe_list(dashboard_data.get("model_picker_hidden_models"))
+                        if isinstance(raw, str) and (model := raw.strip()) and model != "auto"
+                    )
+                ),
                 session_grid=dashboard_data.get("session_grid", False),
                 mcp_app_panel=dashboard_data.get("mcp_app_panel", False),
                 auto_open_git_panel=_safe_bool(dashboard_data.get("auto_open_git_panel"), False),
@@ -4054,6 +4071,9 @@ class KiroCrewConfig:
                 tips_enabled=bool(dashboard_data.get("tips_enabled", True)),
                 feature_videos_enabled=_safe_bool(
                     dashboard_data.get("feature_videos_enabled"), False
+                ),
+                feature_videos_cache_max_mb=_safe_float(
+                    dashboard_data.get("feature_videos_cache_max_mb", 500.0), 500.0, lo=0.0
                 ),
                 folder_suggestions_enabled=bool(
                     dashboard_data.get("folder_suggestions_enabled", True)

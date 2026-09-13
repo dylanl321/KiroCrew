@@ -87,6 +87,12 @@ Per-thread JSONL files at `~/.kiro/crew/sessions/{safe_key}.jsonl`. First line i
 - `recent_with_provenance(key)` — entries with source citations
 - `list_sessions()` — lists all sessions with title (first user message or LLM-generated). Sort key uses ISO `created` string consistently (defaults to ISO from `st_mtime` if no metadata `created` field, ensuring string-only comparisons). Each returned session's meta dict also carries `folder_id` when present in the persisted metadata line, so sessions can be grouped by the folder they were filed in.
 - `agent_usage()` — returns `{agent_name: (session_count, last_used_mtime)}`; built on `list_sessions()` so it inherits canonical-session dedup + symlink-skip (counts per logical conversation). Used by `GET /api/agents` to order the roster most-used-first, degrading to config order on failure.
+- `history_index.py` stores file freshness identities without truncation: signed-64-bit
+  `st_dev`/`st_ino` values remain SQLite INTEGERs; wider values use prefixed decimal
+  TEXT (`i:<value>`) to avoid INTEGER-affinity conversion to floating point. Sync,
+  freshness checks, shortlist validation and snippet reads use the same encoding.
+  Existing integer rows and schema version 2 remain compatible; unsigned Windows
+  device IDs and 128-bit inode IDs do not require an index migration.
 - `search_sessions(query, limit=50)` — case-insensitive substring content search over the newest `_SEARCH_SCAN_WINDOW` session JSONL files; the ONE ranking shared by the dashboard history filter, the `search_chat_history` MCP tool, and Discord session resume. The query is parsed by `parse_search_query` into needles: non-CJK terms are required substrings (AND over the document); a spaceless-script run (Han ideographs + kana; NOT Hangul, since modern Korean is space-separated) gates on its individual characters (required, down-weighted) plus an adjacency floor — at least one of the run's character bigrams must hit somewhere, so a spaceless multi-word CJK query matches documents containing the words apart (each word is a bigram hit) while scatter-only character noise is excluded, and adjacency dominates the ranking; the floor is waived when the query's bigram set exceeds its cap (a partial set cannot prove no-adjacency-anywhere, so truncation only ever loosens). Occurrence counts are weighted per needle, length-normalized, title-boosted, phrase-bonused, then multiplied by a bounded recency boost (×2.5 for a session modified now, decaying toward ×1 with a 30-day half-weight — never a penalty; sized so a year-old double mention loses to today's single mention while a decisively better old match still wins), and capped to `limit` results. Exposed via `GET /api/sessions/search?q=<q>&limit=<n>` (min 2 chars); used by the dashboard history filter to find sessions by content (CR ids, error messages, file paths) rather than title alone. Returns the same meta dicts as `list_sessions()`, so each search hit likewise carries `folder_id` (when present), letting the sidebar group results by folder. Snippet builders (`_content_snippet`, mcp_core's `_extract_history_snippet`) derive their needles from the same parse via `snippet_needles` (phrase first, then whole terms/bigrams, lone CJK characters last) so match and excerpt cannot drift apart. The fold/snippet memos backing the search are keyed by the sanitized `path.stem` (from `list_sessions`' meta dicts) while writers invalidate under the logical session key; `_invalidate_cache`'s identity-wide pops are what connect the two spellings, so a housekeeping rewrite that restores the file's mtime still drops the memo and search stops matching text the transcript no longer contains.
 - `needles_match_text(needles, folded_text)` — the single-string form of `search_sessions`' match gate (required needles as substrings + the CJK adjacency floor), for callers filtering one text field; Discord session resume's zero-hit title fallback uses it so title matching cannot grow a second spelling of tokenization.
 - `read_file_change_messages(key)` — a lightweight Artifacts projection that streams one transcript as bytes, skips lines without the serialized `"file_changes"` key before JSON parsing, and retains only `ts` plus `meta.file_changes` in its own bounded, file-stamped cache. It never warms `_msg_cache`, so scanning the session-document firehose cannot retain the full parsed transcript corpus.
@@ -843,6 +849,22 @@ discards cancelled turns from its own ACP conversation log. The flag
 soft-cancel success) gates the one-shot re-injection.
 
 ## Session Lifecycle
+
+Cold-start prompt replay merges the on-disk chained transcript with a frozen
+live-window snapshot before applying role quotas, a tail-first model-window
+budget and redaction. Message identity is `meta.mid`, falling back to a delivery
+`sendId` or an exact legacy timestamp/role/content tuple. Only object-valued
+metadata supplies delivery IDs; scalar and list metadata use the legacy identity
+without changing the persisted row. Cross-source matching
+is one-to-one, so repeated text with distinct IDs and repeated id-less rows are
+retained. The triggering request's captured identity is excluded whether or not
+that row was flushed. Queue drain passes its appended row directly to the runner,
+including `inject` rows with `cron`, `recovery` and `user_replay` kinds. Other
+entry points capture the latest user, nudge, subagent or inject row before any
+await. Same-text older deliveries remain history because exclusion uses the
+captured row's identity. There is no additional whole-slot prefix after this replay.
+An explicit replay, including an empty replay, suppresses `ContextBuilder`'s
+inner JSONL fallback; only an absent replay requests fallback construction.
 
 1. New session → full context injected (memory + skills + lessons + last 20 messages)
 2. Messages saved to JSONL with provenance after each response

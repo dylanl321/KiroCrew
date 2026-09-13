@@ -51,6 +51,22 @@ def _app_info(name: str, *, enabled: bool = True, version: str = "1.0.0", hooks:
     }
 
 
+async def _await_until(predicate, *, timeout: float = 5.0, message: str = "") -> None:
+    """Poll ``predicate`` until true, failing loudly past a generous deadline.
+
+    The wall-clock-races convention: a watchdog window patched tight enough to
+    trip the genuinely-hung app is a real deadline for the fast app too on a
+    loaded runner, so assertions about the fast app's OUTCOME must await the
+    observable state rather than race that window (the tripped task is never
+    cancelled and always finishes on its own).
+    """
+    loop = asyncio.get_running_loop()
+    give_up_at = loop.time() + timeout
+    while not predicate():
+        assert loop.time() < give_up_at, message or "condition never became true"
+        await asyncio.sleep(0.01)
+
+
 @pytest.fixture
 def _harness(monkeypatch):
     """Wire the reconciler's dependencies to deterministic in-memory doubles.
@@ -248,7 +264,9 @@ async def test_hung_teardown_does_not_wedge_the_pass(_harness, monkeypatch):
     the pass must complete and quick must be reconciled despite hang never
     returning."""
     calls, (set_current, _, _) = _harness
-    monkeypatch.setattr(hr, "PER_APP_PASS_WATCHDOG_SECS", 0.1)  # trip fast in-test
+    monkeypatch.setattr(
+        hr, "PER_APP_PASS_WATCHDOG_SECS", 0
+    )  # deterministic trip, no clock dependency
     hang_cancelled = {"v": False}
 
     async def maybe_hang_disable(name, app_info, **kwargs):
@@ -273,8 +291,23 @@ async def test_hung_teardown_does_not_wedge_the_pass(_harness, monkeypatch):
     await asyncio.wait_for(hr.reconcile_once([]), timeout=2.0)
 
     # quick was reconciled; hang's teardown was left running, NOT cancelled.
-    assert hi.loaded_hook_signature("quick") is None, "quick must reconcile despite hang"
+    # On a loaded runner the 0.1s watchdog can trip quick too (two to_thread
+    # hops precede on_app_disable), but a trip never cancels: quick's task keeps
+    # running and clears the signature on its own. Await that observable state
+    # instead of racing the watchdog window.
+    await _await_until(
+        lambda: hi.loaded_hook_signature("quick") is None,
+        message="quick must reconcile despite hang",
+    )
     assert hi.loaded_hook_signature("hang") is not None, "hung teardown left pending -> retried"
+    # A wrongly-issued task.cancel() is visible synchronously via cancelling()
+    # even before the CancelledError is delivered; the flag alone would miss it
+    # when no later await yields. Check both: the request count, then the
+    # delivered exception after one explicit yield.
+    hang_task = hr._inflight_app_tasks.get("hang")
+    assert hang_task is not None and not hang_task.done()
+    assert hang_task.cancelling() == 0, "watchdog must NOT request cancellation"
+    await asyncio.sleep(0)  # let any wrongly-requested cancel be delivered
     assert hang_cancelled["v"] is False, "watchdog must NOT cancel the hung teardown"
 
 
@@ -286,7 +319,25 @@ async def test_hung_teardown_is_not_respawned_next_tick(_harness, monkeypatch):
     an app that still has a live one -- so a hung teardown produces exactly ONE
     outstanding task no matter how many ticks run."""
     calls, (set_current, _, _) = _harness
-    monkeypatch.setattr(hr, "PER_APP_PASS_WATCHDOG_SECS", 0.05)
+    monkeypatch.setattr(
+        hr, "PER_APP_PASS_WATCHDOG_SECS", 0
+    )  # deterministic trip, no clock dependency
+
+    # Count spawns at the one place they happen. Neither of this test's other
+    # observables can: a re-spawned task blocks on the app's lifecycle lock BEFORE
+    # it reaches on_app_disable, so it never appends to ``calls``, and
+    # ``_inflight_app_tasks`` is keyed by app name, so each re-spawn overwrites the
+    # same slot and its length is 1 by construction. The wrapper is sync on
+    # purpose: it records at coroutine CREATION, inside reconcile_once's
+    # ensure_future call, so the count owes nothing to task scheduling.
+    spawned: list[str] = []
+    real_reconcile_app = hr._reconcile_app
+
+    def counting_reconcile_app(name, snapshot_info):
+        spawned.append(name)
+        return real_reconcile_app(name, snapshot_info)
+
+    monkeypatch.setattr(hr, "_reconcile_app", counting_reconcile_app)
 
     async def hang_disable(name, app_info, **kwargs):
         calls.append(("disable", name))
@@ -297,13 +348,24 @@ async def test_hung_teardown_is_not_respawned_next_tick(_harness, monkeypatch):
     await hi.record_loaded_hook_signature("hang", _app_info("hang"))
     set_current()  # get_app -> None -> teardown branch
 
-    # Three back-to-back ticks while the teardown stays hung.
-    for _ in range(3):
+    # Tick 1 spawns the teardown. Await its arrival INSIDE on_app_disable before
+    # ticking again: a zero watchdog returns the pass while the spawned task is
+    # still short of its two to_thread hops, and ticking straight away would
+    # exercise the skip against a task that has not started rather than against a
+    # teardown hung in on_shutdown holding the lock, which is the documented case.
+    await asyncio.wait_for(hr.reconcile_once([]), timeout=2.0)
+    await _await_until(lambda: len(calls) >= 1, message="teardown was never spawned")
+
+    # Two further ticks while that teardown stays hung.
+    for _ in range(2):
         await asyncio.wait_for(hr.reconcile_once([]), timeout=2.0)
 
-    # Only ONE teardown was ever spawned; later ticks skipped the in-flight app.
-    assert calls == [("disable", "hang")], "hung app must not be re-spawned each tick"
-    assert len([t for t in hr._inflight_app_tasks.values() if not t.done()]) == 1
+    # Exactly ONE teardown was ever spawned; the later ticks skipped the live app.
+    assert spawned == ["hang"], "hung app must not be re-spawned each tick"
+    assert calls == [("disable", "hang")]
+    live = [t for t in hr._inflight_app_tasks.values() if not t.done()]
+    assert len(live) == 1
+    assert live[0].cancelling() == 0, "the straggler must not have been cancel-requested"
 
 
 @pytest.mark.asyncio

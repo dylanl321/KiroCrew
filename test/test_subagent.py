@@ -101,6 +101,37 @@ class TestSpawnWithoutApprovalCallback:
         assert info.error == "spawn rejected: no approval mechanism configured"
 
     @pytest.mark.asyncio
+    async def test_spawn_refused_while_gateway_admission_is_closed(self) -> None:
+        sessions = _mock_sessions()
+        sessions.admission_closed = True
+        manager = SubagentManager(
+            sessions=sessions,
+            ctx_builder=_mock_ctx_builder_auto_spawn(),
+        )
+
+        with patch("kiro_crew.subagent.Stats"), patch("kiro_crew.subagent.sel"):
+            info = manager.spawn("must wait for update")
+
+        assert info is not None
+        assert info.done is True
+        assert info.error == "spawn refused: gateway admission is closed"
+        assert manager._tasks == {}
+
+    def test_total_queued_count_includes_every_parent(self) -> None:
+        manager = SubagentManager(
+            sessions=_mock_sessions(),
+            ctx_builder=_mock_ctx_builder(),
+        )
+        manager._queue.extend(
+            [
+                {"parent_session_key": "dashboard:a"},
+                {"parent_session_key": "slack:b"},
+            ]
+        )
+
+        assert manager.queued_count == 2
+
+    @pytest.mark.asyncio
     async def test_spawn_auto_approved_with_flag(self) -> None:
         """Spawn is auto-approved when auto_approve_subagent_spawn is True."""
         manager = SubagentManager(
@@ -1511,16 +1542,38 @@ class TestCheckMemoryAvailable:
         ok, _ = check_memory_available(min_gb=4.0, path=str(f))
         assert ok is True
 
-    def test_sensitive_path_rejected(self, tmp_path):
-        """Returns (True, -1.0) for sensitive paths — fails open."""
+    def test_does_not_route_through_path_gate(self, tmp_path):
+        """The constant kernel path bypasses the agent-path gate.
+
+        A gate refusal under load must not silently disable spawn
+        back-pressure, so the read is a plain ``open``. A function-local
+        re-route through either gate helper makes this test fail loudly.
+        """
         from unittest.mock import patch
 
         from kiro_crew.subagent import check_memory_available
 
         f = tmp_path / "meminfo"
         f.write_text("MemAvailable:    8388608 kB\n")
-        with patch("kiro_crew.subagent.safe_read_file", side_effect=PermissionError("blocked")):
-            ok, avail = check_memory_available(path=str(f))
+        with patch(
+            "kiro_crew.hooks.safe_read_file",
+            side_effect=AssertionError("gate must not be consulted"),
+        ), patch(
+            "kiro_crew.hooks.is_sensitive_path",
+            side_effect=AssertionError("gate must not be consulted"),
+        ):
+            ok, avail = check_memory_available(min_gb=4.0, path=str(f))
+        assert ok is True
+        assert avail == 8.0
+
+    def test_permission_error_fails_open(self, tmp_path):
+        """A real EACCES from open() is an OSError and fails open (True, -1.0)."""
+        from unittest.mock import patch
+
+        from kiro_crew.subagent import check_memory_available
+
+        with patch("builtins.open", side_effect=PermissionError("denied")):
+            ok, avail = check_memory_available(path="/proc/meminfo")
         assert ok is True
         assert avail == -1.0
 

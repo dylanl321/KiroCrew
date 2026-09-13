@@ -93,6 +93,7 @@
       "transcript": {
         "empty": "No transcript yet",
         "emptyHintLive": "Final speech will appear here as the meeting continues.",
+        "emptyHintPaused": "Paused — speech will appear here after you resume.",
         "emptyHintRecorded": "No transcript was recorded for this meeting.",
         "full": "Transcript is full. New speech and broadcasts are no longer being recorded or sent to agents.",
         "jumpToLatest": "Jump to latest",
@@ -100,6 +101,16 @@
         "regionLabel": "Meeting transcript",
         "title": "Transcript",
         "typed": "Typed"
+      },
+      "meeting": {
+        "endingReview": "Ending — preparing review…",
+        "pausing": "Pausing…",
+        "resuming": "Resuming…"
+      },
+      "broadcastBar": {
+        "pausedPlaceholder": "Agents paused — resume to send",
+        "pausingPlaceholder": "Pausing — sending is unavailable",
+        "resumingPlaceholder": "Resuming — sending will be available shortly"
       }
     },
     "autoResearch": {
@@ -1146,6 +1157,12 @@
     "pptxMaker": {
       "libraryPanel": {
         "font_specimen": "Aa"
+      }
+    },
+    "projectScaffolder": {
+      "projectScaffolderPage": {
+        "n_already_set_up": "{{n}} already set up",
+        "root_already_exists_nothing_to_create": "This directory already has its sidebar folder, so there is nothing left to create."
       }
     },
     "designCritique": {
@@ -2210,6 +2227,10 @@
       "click_to_open_shift_click_to_copy_path": "Click to open / Shift+click to copy path",
       "click_to_browse_shift_click_to_copy_path": "Click to browse / Shift+click to copy path",
       "copy_diagram_source": "Copy diagram source",
+      "copy_table_csv": "Copy table as CSV",
+      "copy_table_markdown": "Copy table as Markdown",
+      "format_csv": "Copy CSV",
+      "format_markdown": "Copy Markdown",
       "diagram_source": "Diagram source",
       "copy_failed": "Copy failed",
       "mermaid_render_failed": "Couldn’t render this diagram. Showing the source instead.",
@@ -2705,6 +2726,7 @@
       "comment_unread_other": "{{count}} comments · unread"
     },
     "reasoningEffortDropdown": {
+      "configured_default_marker": "Configured default",
       "default_with_level": "Default · {{level}}",
       "effort_help": "Reasoning effort sets how long the model thinks before answering. Higher means more time reasoning through hard problems (slower, better answers); lower is faster. Turning off the per-session override falls back to the default in Settings → Chat, or to the model's own choice when no default is set (Fable/Opus/Sonnet only)."
     },
@@ -2796,6 +2818,10 @@
       "trust_all_base": "Trust all <mono>{{base}}</mono> commands",
       "trust_all_tools_channel": "Trust all tools in this channel — persists across restarts",
       "trust_this_command": "Trust “<mono>{{cmd}}</mono>”"
+    },
+    "multiSelect": {
+      "deselect_all": "Deselect all",
+      "select_all": "Select all"
     },
     "searchableSelect": {
       "no_matches": "No matches",
@@ -2973,11 +2999,11 @@
       "pull_request_url": "Pull request URL",
       "pull_request_url_placeholder": "e.g. https://github.com/org/repo/pull/123…",
       "request_failed": "The monitor request failed. Try again.",
-      "session_mode_unavailable": "Monitors aren't available in crew or member sessions because those sessions route work through their crew.",
+      "session_mode_unavailable": "Automations aren't available in crew or member sessions because those sessions route work through their crew.",
       "restart_monitor": "Restart monitor",
       "review_ready": "Review ready",
       "save_changes": "Save changes",
-      "set_up_bounded_monitor": "Set up a bounded monitor",
+      "set_up_bounded_monitor": "Watch a pull request instead",
       "sidebar_status": "Monitor · {{status}}",
       "start_monitor": "Start monitor",
       "statuses": {
@@ -2996,9 +3022,8 @@
       "title": "Bounded pull request monitor",
       "tokens": "Tokens: {{count}}",
       "unknown": "Unknown",
-      "back_to_bounded_monitor": "Back to bounded monitor",
-      "legacy_notice": "This legacy loop invokes the agent every cycle and can run without a limit.",
-      "use_legacy_costly": "Use legacy goal loop (costly)",
+      "legacy_notice": "This goal loop invokes the agent every cycle and can run without a limit.",
+      "use_legacy_costly": "Back to goal loop",
       "wake_instructions": "Instructions for the agent when it wakes",
       "wake_instructions_too_long": "Enter no more than {{max}} characters.",
       "wakes": "Wakes: {{count}}",
@@ -3916,6 +3941,9 @@
       "could_not_send_to_side_chat": "Couldn't send to the side chat"
     },
     "chatSidebar": {
+      "adopt_failed": "Could not open this session here.",
+      "adopt_remote_bind_failed": "Could not reach {{name}} to open this session.",
+      "adopt_target_unknown": "This session is no longer open on {{name}}.",
       "answered_by": "answered by {{agent}}",
       "archive_session_one": "Archive {{count}} session",
       "archive_session_other": "Archive {{count}} sessions",
@@ -3934,6 +3962,11 @@
       "loop": "Loop {{count}}/{{total}}",
       "loop_2": "Loop · {{count}}",
       "loop_interrupted": "interrupted",
+      "opening_session_locally": "Opening this session here…",
+      "not_open_here_yet": "On {{name}} — click to open here",
+      "on_instance": "On {{name}}",
+      "opens_here_runs_on_instance": "Opens this session here — its turns keep running on {{name}}",
+      "opens_on_crew_switches_there": "Opens on {{name}} — switches to that crew, not here",
       "pending_your_response": "Pending your response",
       "running_queued": "{{started}} running · {{queued}} queued",
       "show_all_older_sessions": "Show all older sessions",
@@ -5261,13 +5294,20 @@
         "status_unavailable": "Status unavailable"
       },
       "chatPanel": {
+        "auto_always_visible": "Always visible in chat model pickers",
         "click_a_suggested_reply_to_send_it_instantly": "Click a suggested reply to send it instantly. {{mod}}+Click to select multiple.",
         "comfortable": "Comfortable",
         "compact": "Compact",
         "default_auto": "Default (auto)",
+        "failed_to_save_selectable_models": "Failed to save selectable models",
+        "model_picker_all_models": "All models ({{count}})",
+        "model_picker_selected_models": "Selected {{selected}} / {{total}}",
         "maximum_characters_retained_in_the_completion_ev": "Maximum characters retained in the completion event after applying the truncation mode. 0 disables truncation entirely. Default {{n}}.",
         "opt_in_split_the_chat_into_resizable_session_pan": "Opt-in: split the chat into resizable session panes ({{mod}}+D). Experimental.",
         "role_chat": "Chat",
+        "search_models": "Search models…",
+        "selectable_models": "Selectable Models",
+        "selectable_models_description": "Choose which advertised models appear in Chat model pickers. Auto and an active session model always remain visible.",
         "role_background": "Background",
         "role_subagents": "Sub-agents",
         "background_effort": "Background Effort",
@@ -6108,6 +6148,10 @@
       "plainDiff": {
         "description": "Render diffs as plain unified-diff text instead of syntax-highlighted colour. Uses less memory on large diffs.",
         "label": "Plain diffs"
+      },
+      "diffLayout": {
+        "description": "Show old and new code in two columns; off shows one unified column. Changing it here or on any diff sets it everywhere.",
+        "label": "Split (side-by-side) diffs"
       }
     },
     "display": {
@@ -6335,6 +6379,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "The session you clicked was deleted and cannot be opened.",
+      "session_open_error_named": "“{{name}}” could not be opened.",
+      "session_open_error": "The session could not be opened.",
+      "session_gone_open_failed_named": "“{{name}}” was deleted and cannot be opened.",
       "truncated": "…(truncated)"
     }
   },

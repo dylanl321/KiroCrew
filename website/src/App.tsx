@@ -1,3 +1,5 @@
+import { WorkspacePanelContext, WorkspaceFullscreenContext } from './components/WorkspacePanelContext'
+import PanelToggles from './components/PanelToggles'
 import { useEffect, useState, useCallback, useRef, useMemo, useSyncExternalStore, createContext, lazy, Suspense, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -58,7 +60,7 @@ import { OnboardingShellHost } from './components/OnboardingChapterShell'
 import { PREVIEW_EXPAND_EVENT } from './components/WebPreviewPanel'
 import { canRenderMobileConnectKind } from './components/mobileConnectRenderers'
 import { useMayLeaveForNavigation, useIsCurrentUrl, useGuardedLeave } from './components/NavigationLeaveGuard'
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
+import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion } from 'framer-motion'
 import { useDrawerSwipe, animateDrawer, registerDrawerTargets, takeOverDrawer, safeAreaLeft } from './hooks/useDrawerSwipe'
 
 /** Mobile nav drawer travel: its 220px width + the 8px mx-2 inset + border. */
@@ -109,6 +111,7 @@ import ArtifactDetailPage from './pages/ArtifactDetailPage'
 import RemoteArtifactDetailPage from './pages/RemoteArtifactDetailPage'
 import ArtifactDeployPage from './pages/ArtifactDeployPage'
 import SettingsPage from './pages/SettingsPage'
+import { InAppUpdateFlow } from './pages/settings/AboutPanel'
 import EmbedSettingsPage from './pages/EmbedSettingsPage'
 import KiroCrewNavBridge from './components/KiroCrewNavBridge'
 import InstanceTabBar from './components/InstanceTabBar'
@@ -1264,12 +1267,19 @@ export default function App() {
   // Can the GATEWAY replace its own code? False on a wheel install and on a
   // desktop bundle, where `POST /api/update` answers 400/409.
   const canApplyUpdate = useAppSelector(s => s.dashboard.status?.update_can_apply)
+  const canArmUpdate = useAppSelector(s => s.dashboard.status?.update_can_arm)
   const updateCommand = useAppSelector(s => s.dashboard.status?.update_command) || ''
+  const updateTargetVersion = useAppSelector(
+    s => s.dashboard.status?.update_latest_version_display
+      || s.dashboard.status?.update_latest_version
+      || '',
+  )
   // Availability and capability are separate facts; `updateAffordance` is the one
   // place that combines them, so the modal and the nav badge cannot disagree.
   const affordance = updateAffordance({
     updateAvailable: useAppSelector(s => s.dashboard.status?.update_available),
     canApply: canApplyUpdate,
+    canArm: canArmUpdate,
     command: updateCommand,
   })
   const version = useAppSelector(s => s.dashboard.status?.version) || '—'
@@ -1336,6 +1346,12 @@ export default function App() {
   // every mousemove during a grip-drag, and a primitive snapshot lets
   // useSyncExternalStore's Object.is check skip those re-renders of App.
   const bottomTerminalOpen = useBottomTerminalOpen()
+  const workspacePanelOpen = useAppSelector(s => s.chat.activityOpen)
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false)
+  const reducePanelMotion = useReducedMotion()
+  const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false)
+  const exitWorkspaceFullscreen = useCallback(() => setWorkspaceFullscreen(false), [])
+  const toggleWorkspaceFullscreen = useCallback(() => setWorkspaceFullscreen(value => !value), [])
   // "Connect your phone" rail entry. The methods come from the CPP
   // mobile_connect seam filtered by governance; an empty list (edition
   // returned none, policy denied all, seam degraded) hides the row entirely —
@@ -1387,7 +1403,7 @@ export default function App() {
     return setArtifactNavIntentHandler((intent) =>
       applyNavIntentInMain(intent, {
         navigate,
-        switchSlot: (slotKey) => { dispatch(switchSlot(slotKey)) },
+        switchSlot: (slotKey) => { dispatch(switchSlot({ key: slotKey, announceOnMissing: true })) },
       }),
     )
   }, [isPopout, isEmbed, navigate, dispatch])
@@ -2443,7 +2459,7 @@ export default function App() {
     // close the terminal in the MAIN window, out of sight of the person pressing
     // the key.
     onToggleTerminal: terminalEnabled && !isPopout && !isEmbed
-      ? () => { if (terminalPoppedOut) focusTerminalPopout(); else toggleTerminalByChord(activeSlotProject) }
+      ? () => { exitWorkspaceFullscreen(); if (terminalPoppedOut) focusTerminalPopout(); else toggleTerminalByChord(activeSlotProject) }
       : undefined,
   })
   // Cmd+1..9 (⌘ mac / Ctrl win-linux) switches instance panes: 1=Local,
@@ -2713,7 +2729,7 @@ export default function App() {
           // NavIntent carries no query string, and ChatPage writes `?sid=` back
           // into the URL itself once the session is active.
           { path: '/chat', slotKey },
-          { navigate, switchSlot: (key) => { dispatch(switchSlot(key)) } },
+          { navigate, switchSlot: (key) => { dispatch(switchSlot({ key, announceOnMissing: true })) } },
         )
         return
       }
@@ -3069,6 +3085,11 @@ export default function App() {
   const libraryNavActive = activePath === '/apps/library' || activePath.startsWith('/apps/library/')
   const discoverNavActive = activePath === '/apps' || activePath.startsWith('/apps/-/') || activePath.startsWith('/apps/detail/') || activePath.startsWith('/apps/migrate/')
   const isChat = activePath === '/chat' || activePath.startsWith('/chat/') || activePath === '/'
+  const panelFullscreen = workspaceFullscreen && isChat && workspacePanelOpen && !workspaceSearchOpen
+  const workspaceFullscreenControls = useMemo(() => ({ fullscreen: panelFullscreen, exit: exitWorkspaceFullscreen, toggle: toggleWorkspaceFullscreen }), [panelFullscreen, exitWorkspaceFullscreen, toggleWorkspaceFullscreen])
+  useEffect(() => {
+    if (!isChat || !workspacePanelOpen || workspaceSearchOpen) setWorkspaceFullscreen(false)
+  }, [isChat, workspacePanelOpen, workspaceSearchOpen])
   // /webhooks is a full-height rail-and-detail shell (like /capabilities), so it
   // owns its own scrolling and must not sit inside <main>'s scroll container.
   const needsFixedHeight = isChat || activePath === '/settings' || activePath.startsWith('/settings/') || activePath === '/developer' || activePath === '/capabilities' || activePath === '/webhooks'
@@ -3179,6 +3200,8 @@ export default function App() {
     <div
       ref={shellRef}
       data-testid="dashboard-shell"
+      data-workspace-fullscreen={panelFullscreen || undefined}
+      data-panel-toggle-owner={isChat ? (panelFullscreen ? 'workspace' : workspacePanelOpen && !workspaceSearchOpen && !bottomDock ? 'workspace' : bottomTerminalOpen && terminalPosition === 'right' && !terminalPoppedOut ? 'terminal' : workspaceSearchOpen ? 'search' : 'chat') : undefined}
       className={`relative z-[1] h-full grid ${shellEntered ? '' : 'animate-rise'} overflow-hidden bg-bg p-safe ${isMacElectron ? `mac-electron ${macFullscreen ? 'mac-fullscreen' : ''}` : ''} ${isWinElectron ? 'win-electron' : ''} ${isLinuxFramelessElectron ? 'linux-electron' : ''} ${isMobile ? 'grid-cols-[minmax(0,1fr)] grid-rows-[42px_minmax(0,1fr)]' : bottomDock ? 'grid-rows-[42px_minmax(0,1fr)_auto]' : 'grid-rows-[42px_minmax(0,1fr)]'}`}
       // Retire the entrance animation once it has played, so re-showing this
       // pane cannot replay it. Guarded on BOTH the keyframe name and the event
@@ -3189,6 +3212,10 @@ export default function App() {
         if (e.target === e.currentTarget && e.animationName === 'rise') setShellEntered(true)
       }}
       style={{
+        // The fixed group is the workspace toggle plus the terminal toggle when
+        // terminals are enabled; fullscreen belongs to the workspace panel's own
+        // action group and reserves nothing here.
+        ...{ '--workspace-panel-control-count': Number(terminalEnabled) + 1 },
         gridTemplateAreas: isMobile ? '"topbar" "content"' : bottomDock ? '"topbar topbar" "nav content" "nav actbar"' : '"topbar topbar topbar" "nav content actbar"',
         ...(!isMobile && {
           gridTemplateColumns: bottomDock
@@ -3231,7 +3258,17 @@ export default function App() {
           Activity panel here on desktop so it spans the window top-to-bottom
           instead of sitting below the header row. Empty (0 width) when the
           panel is closed or on non-chat routes. */}
-      {!isMobile && <div id="activity-bar-slot" className="h-full min-h-0 min-w-0" style={{ gridArea: 'actbar' }} />}
+      {!isMobile && <motion.div id="activity-bar-slot" layout layoutDependency={panelFullscreen}
+        transition={{ layout: { duration: reducePanelMotion ? 0 : 0.18 } }}
+        className="h-full min-h-0 min-w-0" style={{ gridArea: 'actbar' }} />}
+
+      {isChat && (
+        <div data-workspace-panel-controls className="absolute top-0 right-safe-offset-2 z-[60] flex items-center h-[var(--panel-toolbar-height)] focus-caption-reserve"
+          style={{ gridArea: '2 / 1 / 3 / -1' }}>
+          <PanelToggles showWorkspace workspaceOpen={workspacePanelOpen && !workspaceSearchOpen}
+            exitFullscreen={panelFullscreen ? exitWorkspaceFullscreen : undefined} />
+        </div>
+      )}
 
       {/* Skip to content — visible only on focus for keyboard users */}
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-accent-fg focus:text-sm focus:font-medium">{i18nT('app.skip_to_content')}</a>
@@ -3775,10 +3812,6 @@ export default function App() {
               />
             </span>
           )}
-          {/* Notifications bell — borderless icon button, rightmost control.
-              (The activity-panel open toggle now lives in the session header,
-              beside the pop-out control — see ChatPage — so opening the panel
-              no longer narrows this full-width header.) */}
           <NotificationsBellButton />
         </div>
       </header>
@@ -3837,12 +3870,15 @@ export default function App() {
                 <button className="w-full py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-accent text-accent-fg border-none hover:opacity-90 transition-opacity" onClick={handleUpdate}>
                   {i18nT('app.update_now')}
                 </button>
+              ) : affordance === 'arm' ? (
+                <InAppUpdateFlow
+                  version={updateTargetVersion}
+                  manualCommand=""
+                  onHandoff={() => setShowChangelog(false)}
+                />
               ) : affordance === 'command' ? (
-                // This install cannot replace its own code from here: `POST
-                // /api/update` is git fetch + reset, so a wheel install answers
-                // 400/409 and a desktop bundle is owned by its own updater.
-                // Settings > About carries the same command with an explanation
-                // and a copy button.
+                // A non-managed source install cannot use host-local approval.
+                // Its installer remains a manual recovery command.
                 <div className="p-2.5 bg-bg rounded-lg border border-border font-mono text-[12px] text-text break-all"
                   data-testid="modal-update-command">
                   {updateCommand}
@@ -4260,7 +4296,7 @@ export default function App() {
                   /* While popped out: focus only (a refused programmatic
                      focus is a harmless no-op). Explicit re-dock lives in the
                      TerminalDetachedBar below -- never a timing heuristic. */
-                  onClickOverride={() => { if (terminalPoppedOut) focusTerminalPopout(); else toggleBottomTerminal(activeSlotProject) }}
+                  onClickOverride={() => { exitWorkspaceFullscreen(); if (terminalPoppedOut) focusTerminalPopout(); else toggleBottomTerminal(activeSlotProject) }}
                 />
               )}
               {hasRenderableMobileConnect && (
@@ -4462,7 +4498,7 @@ export default function App() {
               on the page the user was on when it happened. */}
           <CrashReportNotice />
           <Routes>
-            <Route path="/chat/:slug?" element={<ErrorBoundary><ChatPage /></ErrorBoundary>} />
+            <Route path="/chat/:slug?" element={<WorkspacePanelContext.Provider value={setWorkspaceSearchOpen}><WorkspaceFullscreenContext.Provider value={workspaceFullscreenControls}><ErrorBoundary><ChatPage /></ErrorBoundary></WorkspaceFullscreenContext.Provider></WorkspacePanelContext.Provider>} />
             <Route path="/orchestrated/:slug?" element={<OrchestratedRedirect />} />
             <Route path="/notifications" element={<ErrorBoundary><NotificationsPage /></ErrorBoundary>} />
             {/* Bookmarkable session chooser: neutral list, no auto-select; rows

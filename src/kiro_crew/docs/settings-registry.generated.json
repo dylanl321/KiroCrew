@@ -642,6 +642,14 @@
       "description": "Time window for session restoration"
     },
     {
+      "id": "chat.selectable-models",
+      "label": "Selectable Models",
+      "tab": "chat",
+      "route": "/settings/chat?highlight=key%3Adashboard.model_picker_hidden_models",
+      "description": "Choose which advertised models appear in Chat model pickers. Auto and an active session model always remain visible.",
+      "configKey": "dashboard.model_picker_hidden_models"
+    },
+    {
       "id": "chat.send-shortcut",
       "label": "Send shortcut",
       "tab": "chat",
@@ -694,6 +702,13 @@
       "label": "Soft-stop budget (seconds)",
       "tab": "chat",
       "route": "/settings/chat?highlight=chat.soft-stop-budget-seconds"
+    },
+    {
+      "id": "chat.split-side-by-side-diffs",
+      "label": "Split (side-by-side) diffs",
+      "tab": "chat",
+      "route": "/settings/chat?highlight=chat.split-side-by-side-diffs",
+      "description": "Show old and new code in two columns; off shows one unified column. Changing it here or on any diff sets it everywhere."
     },
     {
       "id": "chat.split-view-session-grid",
@@ -816,6 +831,13 @@
       "tab": "developer",
       "route": "/settings/developer?highlight=developer.developer-mode",
       "description": "Show Developer page in sidebar with Logs, System metrics, and Memory internals"
+    },
+    {
+      "id": "developer.remote-instance-sessions",
+      "label": "Remote instance sessions",
+      "tab": "developer",
+      "route": "/settings/developer?highlight=developer.remote-instance-sessions",
+      "description": "Merge a connected remote instance's live sessions into the Sessions list, each marked with a server badge. Functional, but not finished."
     },
     {
       "id": "developer.run-a-local-gateway",

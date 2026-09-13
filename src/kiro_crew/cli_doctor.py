@@ -1093,6 +1093,127 @@ def _doctor_cron_script_sources(issues: list[str]) -> None:
         )
 
 
+def _open_slot_agent_names() -> list[tuple[str, str]]:
+    """``(slot key, agent name)`` for every open dashboard tab persisting one.
+
+    Read-only + best-effort: reads ``open_slots.json`` and each open slot's
+    transcript metadata line off disk (no running gateway needed), returning an
+    empty list on any error. Slot keys pass through the restore path's own
+    sanitizer before they reach path construction -- the file is
+    attacker-writable, and doctor must not accept a key the restore path would
+    reject.
+    """
+    try:
+        from kiro_crew.dashboard.chat_persistence import (
+            _read_open_slots_keys,
+            _sanitize_open_slot_key,
+        )
+        from kiro_crew.dashboard.chat_utils import slot_transcript_key
+        from kiro_crew.history import ConversationLog
+
+        log = ConversationLog()
+        out: list[tuple[str, str]] = []
+        for raw in _read_open_slots_keys():
+            key = _sanitize_open_slot_key(raw)
+            if not key:
+                continue
+            # slot_transcript_key, not _history_key_for: a channel-born tab's
+            # slot key (e.g. slack_<ts>) already addresses its transcript, and
+            # an unconditional dashboard: prefix would read a nonexistent file
+            # and silently skip that tab.
+            agent = log.get_metadata(slot_transcript_key(key)).get("agent")
+            if isinstance(agent, str) and agent:
+                out.append((key, agent))
+        return out
+    except Exception:
+        logger.debug("doctor: open-slot agent scan failed", exc_info=True)
+        return []
+
+
+def _doctor_deprecated_agent_specs(cfg: KiroCrewConfig, issues: list[str]) -> None:
+    """Report configs that still name a deprecated agent spec.
+
+    A deprecated spec (``DEPRECATED_AGENT_SPECS`` in ``agent.py``) still
+    resolves for one release, so a config surface naming it -- a cron job, a
+    crew binding, an open chat slot, or one of the config's own agent
+    selectors -- keeps working today and breaks with ``Mode not found`` at
+    dispatch time once the alias is deleted. Each finding names the replacement so the owner
+    can migrate inside the window.
+
+    Silent when nothing names one: the installed alias spec by itself is
+    expected (the gateway installs it every boot), not a finding.
+    """
+    from kiro_crew.agent import DEPRECATED_AGENT_SPECS
+    from kiro_crew.cron import job_agent_names_from_disk
+
+    # (holder description, deprecated name, replacement). Holder text is
+    # user/LLM-writeable (crew names, job names, slot keys) so it goes through
+    # _safe_display; the matched name and its replacement are keys and values
+    # of our own table, so they print as-is.
+    findings: list[tuple[str, str, str]] = []
+
+    # A cron job, chat slot, or config selector may name a CREW rather than a
+    # kiro agent spec; the crew row owns that report, so those names are
+    # skipped on the leaf surfaces rather than double-flagged through the
+    # crew's binding.
+    crew_names = set(cfg.agents)
+
+    def _add(holder: str, name: object) -> None:
+        # config.json is hand-editable and agent-writable, and the loader
+        # preserves some of these values verbatim (e.g. kiro_agent), so a
+        # non-string can arrive here. dict.get on an unhashable value raises
+        # TypeError, and doctor must diagnose a malformed config, not crash
+        # on it -- a non-string never names a deprecated spec, so skip it.
+        if not isinstance(name, str) or not name or name in crew_names:
+            return
+        replacement = DEPRECATED_AGENT_SPECS.get(name)
+        if replacement:
+            findings.append((holder, name, replacement))
+
+    # Crew bindings: config.json agents.<name>.kiro_agent. A crew name is not
+    # skipped here -- crew_names shields only the LEAF surfaces that resolve
+    # through a crew, and a kiro_agent that happens to equal a crew name is
+    # not resolved again.
+    for crew_name, crew in cfg.agents.items():
+        name = crew.kiro_agent
+        if not isinstance(name, str) or not name:
+            continue
+        replacement = DEPRECATED_AGENT_SPECS.get(name)
+        if replacement:
+            findings.append((f"crew {_safe_display(crew_name)}", name, replacement))
+
+    # The config's own persisted agent selectors.
+    _add("agent.default_agent", cfg.agent.default_agent)
+    _add("session.pool_agent", cfg.session.pool_agent)
+    for channel_id, channel in cfg.slack_channels.items():
+        _add(f"slack channel {_safe_display(channel_id)}", channel.agent)
+
+    # Cron jobs: the agent names dispatch actually runs, read off crons.json
+    # (agent_id, or the agent_sequence entries when the sequence dispatches).
+    for holder, name in job_agent_names_from_disk():
+        _add(f"cron job {_safe_display(holder)}", name)
+
+    # Chat slots: each open tab's persisted agent from its transcript metadata.
+    for slot_key, name in _open_slot_agent_names():
+        _add(f"chat slot {_safe_display(slot_key)}", name)
+
+    if not findings:
+        return
+
+    print("\nDeprecated Agent Specs")
+    for holder, name, replacement in findings:
+        print(
+            f"  {holder}:  \u26a0\ufe0f  names deprecated agent spec "
+            f"'{name}' -- rename it to '{replacement}'"
+        )
+    print(
+        "               A deprecated spec still resolves this release and is "
+        "deleted next release; a config still naming it then fails with "
+        "'Mode not found' at dispatch time."
+    )
+    issues.append("a config names a deprecated agent spec")
+
+
 def _doctor_managed_service_policy(issues: list[str]) -> None:
     """Surface installed service definitions that predate launch-class policy."""
     state = service_controller.installed_service_has_managed_marker()
@@ -1253,10 +1374,18 @@ def _doctor_selected_backend_projection(cfg: KiroCrewConfig) -> None:
     and a spec with an empty ``tools`` list produces no unresolved ref to hang it
     off.
 
-    Prints only for that one kind. ``native``, ``mirror`` and ``external`` all
-    mean the servers do reach the session, so a row there would be noise on every
-    stock install — and the refs row already speaks when a projection drops
-    something.
+    The no-channel row prints only for that one kind. ``native``, ``mirror`` and
+    ``external`` all mean the servers do reach the session, so a row there would be
+    noise on every stock install — and the refs row already speaks when a
+    projection drops something.
+
+    A SECOND row, independent of the kind, prints when the selected backend's
+    declared per-tool MCP deny reach is ``whole-server``. That one is not about
+    whether the servers arrive but about what a RESTRICTION on them costs, and it
+    is here because its consequence is the kind an operator meets by accident:
+    switching one tool off is an ordinary action that says nothing about servers,
+    and on such a harness it removes the whole server — Crew's own control plane
+    included. Same terms as the row above: report only, no ``issues`` entry.
 
     Reports only, and appends NO entry to ``issues``, on the terms
     :func:`_doctor_strict_identity` and :func:`_doctor_unresolved_mcp_refs` both
@@ -1279,10 +1408,28 @@ def _doctor_selected_backend_projection(cfg: KiroCrewConfig) -> None:
     declared = backend_mcp_projection(backend)
     if declared is None:
         return
-    kind, channel, tracking = declared
+    kind, channel, tracking, per_tool_deny = declared
+    label = _backend_policy_label(backend)
+    if per_tool_deny == _WHOLE_SERVER_DENY:
+        # The one reach whose consequence an operator meets by accident. Switching a
+        # tool off is an ordinary dashboard action that says nothing about servers,
+        # and on this harness it removes the SERVER -- so a session can lose its
+        # control plane without anything having looked like a mistake. Printed for
+        # the selected backend only, and report-only like every row here.
+        print(f"  mcp per-tool deny: \u23f9 {label} withholds the whole server")
+        _print_wrapped(
+            "This harness has no channel for a per-TOOL MCP restriction: no deny "
+            "slot on the session/new element, no settings file of Crew's, and no "
+            "per-call MCP identity for Crew to refuse a single tool by. So "
+            "switching one tool off (an agent spec's disabledTools, or the "
+            "dashboard's tool-off action) withholds that server ENTIRELY from this "
+            "harness's sessions rather than just that tool -- Crew's own "
+            "kirocrew-core included, which leaves such a session unable to report "
+            "back to its channel. The restriction is honoured, at the cost of the "
+            "server; narrowing nothing leaves every server mounted."
+        )
     if kind != "no-channel":
         return
-    label = _backend_policy_label(backend)
     print(f"  mcp projection: \u23f9 {label} carries none of Kiro Crew's own tools")
     _print_wrapped(
         "This harness advertises no transport the session MCP array can use, so "
@@ -1296,6 +1443,13 @@ def _doctor_selected_backend_projection(cfg: KiroCrewConfig) -> None:
     # printed through the same display guard as every other value in this report.
     _print_wrapped(f"Would need: {_safe_display(channel)}")
     _print_wrapped(f"Tracked at: {_safe_display(tracking)}")
+
+
+#: The ``PerToolDeny`` member whose consequence is worth a row. Compared as a
+#: plain string because the value crosses the agent-sdk boundary as one -- the
+#: enum lives in ``providers/mirrors`` and importing it here is the edge the
+#: boundary gate refuses.
+_WHOLE_SERVER_DENY = "whole-server"
 
 
 def _backend_policy_label(backend: str) -> str:
@@ -3564,6 +3718,7 @@ def _doctor(platform_boot_error: "Exception | None" = None, bundle: bool = False
     # ── Data Home (+ leftover legacy home) ──
     _doctor_data_home()
     _doctor_cron_script_sources(issues)
+    _doctor_deprecated_agent_specs(cfg, issues)
     _doctor_path_launcher()
     _doctor_trust_root()
     _doctor_strict_identity(cfg)

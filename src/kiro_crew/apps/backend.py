@@ -389,6 +389,13 @@ class AppProcess:
     pid: int = 0
     proc: subprocess.Popen | None = field(default=None, repr=False)
     log_fh: Any = field(default=None, repr=False)
+    # Windows only: the OPEN handle to this backend's KILL_ON_JOB_CLOSE job
+    # (from platform_compat.own_process_tree). Held for the backend's lifetime so
+    # the job stays alive; closed in stop_app_backend, which reaps the whole tree
+    # — including a descendant orphaned by an exited launcher. None on POSIX
+    # (the process group owns the tree) or when job creation failed (fail-soft).
+    # Internal bookkeeping: repr=False and deliberately absent from to_dict().
+    job_handle: object | None = field(default=None, repr=False)
     healthy: bool = False
     # The `healthy` value last SUCCESSFULLY reconciled into mcp.json, or None if nothing
     # has been written for this record yet. Distinct from `healthy` because the flag
@@ -1208,11 +1215,17 @@ def provision_app_deps(app_name: str, root: Path) -> str:
             # O_NOFOLLOW arm refuses a link planted at the lock name itself.
             # O_RDWR (not read-only): Windows msvcrt.locking requires write
             # access on the fd (same reason as bridges' _mcp_lock).
-            lflags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-            if pin.fd is not None:
-                lfd = os.open(lock_path.name, lflags, 0o644, dir_fd=pin.fd)
-            else:
-                lfd = os.open(str(lock_path), lflags, 0o644)
+            lflags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            lock_name = lock_path.name if pin.fd is not None else str(lock_path)
+            # Concurrent openat(O_CREAT) of an absent file can return ENOENT on
+            # macOS. Elect one creator, then let contenders open its existing
+            # inode. Never recreate a lock that disappears before the reopen.
+            try:
+                lfd = os.open(
+                    lock_name, lflags | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=pin.fd
+                )
+            except FileExistsError:
+                lfd = os.open(lock_name, lflags, dir_fd=pin.fd)
             with os.fdopen(lfd, "r+") as lf:
                 with platform_compat.file_lock(lf.fileno(), exclusive=True):
                     provision_error = _provision_app_deps_locked(app_name, root, pin)
@@ -2315,6 +2328,13 @@ def _start_app_backend_body(app_name: str, manifest) -> AppProcess | None:
         # both flags explicitly (NOT via **dict unpack — that breaks mypy's Popen
         # overload resolution on the build fleet): start_new_session=True is a
         # no-op on Windows, creationflags resolves to 0 (no-op) on POSIX.
+        #
+        # CREATE_SUSPENDED (0 on POSIX) is the load-bearing half of race-free
+        # KILL_ON_JOB_CLOSE tree ownership: the child is created frozen — it has
+        # executed nothing, so it provably has no descendants yet — the job is
+        # assigned, then the main thread is resumed. That closes by construction
+        # the window in which a running child could fork something that escapes
+        # the job. See the handshake immediately after this spawn.
         try:
             proc = popen_limited(
                 sandboxed_cmd,
@@ -2324,7 +2344,9 @@ def _start_app_backend_body(app_name: str, manifest) -> AppProcess | None:
                 cwd=cwd,
                 env=env,
                 start_new_session=platform_compat.IS_POSIX,
-                creationflags=platform_compat.CREATE_NEW_PROCESS_GROUP,
+                creationflags=(
+                    platform_compat.CREATE_NEW_PROCESS_GROUP | platform_compat.CREATE_SUSPENDED
+                ),
                 # Build-capable apps get the elevated-but-finite NOFILE
                 # ceiling: the backend is the ANCESTOR of its build workloads
                 # (vite/pip) and a 1024 hard cap starves every descendant.
@@ -2339,6 +2361,33 @@ def _start_app_backend_body(app_name: str, manifest) -> AppProcess | None:
     except OSError as exc:
         logger.error("Failed to start app %s backend: %s", app_name, exc)
         return None
+
+    # Tree-ownership handshake (Windows; inert on POSIX). The child is currently
+    # SUSPENDED. Assign a KILL_ON_JOB_CLOSE job now — before it can fork — so the
+    # backend and every descendant belong to a job whose closure reaps the tree,
+    # then resume it. own_process_tree returns None on POSIX or on any Win32
+    # failure (fail-soft: the process-group + taskkill path still stops the app);
+    # a None job handle simply means no OS-level tree ownership for this backend.
+    job_handle = platform_compat.own_process_tree(proc.pid)
+    if platform_compat.IS_WINDOWS:
+        # A False resume on a live child is fatal per resume_process_main_thread's
+        # contract: the backend is alive but frozen and would masquerade as
+        # running. Kill it (closing the job handle reaps the whole tree) and fail
+        # the spawn so the caller clears the placeholder and can retry.
+        if not platform_compat.resume_process_main_thread(proc.pid):
+            logger.error(
+                "App %s backend could not be resumed after spawn (pid %d) — killing "
+                "the frozen child rather than tracking it as running",
+                app_name, proc.pid,
+            )
+            platform_compat.close_owned_tree(job_handle)
+            try:
+                if proc.poll() is None:
+                    platform_compat.kill_process_tree(proc.pid, platform_compat.SIGKILL)
+            except (ProcessLookupError, OSError):
+                pass
+            log_fh.close()
+            return None
 
     # Verify the child SURVIVED its initial bind. A port collision (e.g. another
     # process grabbed the assigned port between our free-port probe and the child's
@@ -2356,6 +2405,9 @@ def _start_app_backend_body(app_name: str, manifest) -> AppProcess | None:
                 tail = "".join(_lf.readlines()[-8:]).strip()[-600:]
         except Exception:  # noqa: BLE001
             pass
+        # Closing the job handle reaps any descendant the dead backend spawned
+        # before it exited; a no-op on POSIX / when ownership was not established.
+        platform_compat.close_owned_tree(job_handle)
         log_fh.close()
         collided = "address already in use" in tail.lower() or "errno 98" in tail.lower()
         logger.error(
@@ -2376,6 +2428,7 @@ def _start_app_backend_body(app_name: str, manifest) -> AppProcess | None:
         pid=proc.pid,
         proc=proc,
         log_fh=log_fh,
+        job_handle=job_handle,
         healthy=False,
         started_at=time.time(),
         log_path=str(log_path),
@@ -2471,6 +2524,26 @@ def stop_app_backend(app_name: str) -> bool:
                 )
             except Exception as exc:
                 logger.debug("SEL audit failed for sigkill_escalation %s: %s", app_name, exc)
+        # Authoritative tree reap (Windows; no-op on POSIX / when no job was
+        # owned). taskkill /T above walks the LIVE process tree, so a descendant
+        # whose launcher already exited is no longer under ap.proc.pid and can
+        # survive it — the #10143 orphan. Closing the KILL_ON_JOB_CLOSE job
+        # terminates every process still assigned to it regardless of tree shape.
+        # Done AFTER the graceful SIGTERM path so a well-behaved backend still
+        # gets its clean-shutdown window first.
+        platform_compat.close_owned_tree(ap.job_handle)
+        ap.job_handle = None
+        # Verify the owned tree is actually gone before reporting stopped — this
+        # is the signal a staged update (#10144) requires to know the live tree
+        # is safe to replace. On POSIX pid_liveness on the group leader stands in;
+        # on Windows the job close is synchronous for assigned processes.
+        _wait_for_pids([ap.proc.pid], timeout=5.0)
+        if platform_compat.pid_liveness(ap.proc.pid) == platform_compat.PID_ALIVE:
+            logger.warning(
+                "App %s backend pid %d still alive after stop + job close — "
+                "tree shutdown NOT verified",
+                app_name, ap.proc.pid,
+            )
     elif not ap.proc and ap.port:
         # Adopted process (proc=None) — kill only PIDs we recorded at adoption
         if not ap.adopted_pids:
@@ -2603,6 +2676,14 @@ def stop_app_backend(app_name: str) -> bool:
                 if ap.port:
                     _allocated_ports.setdefault(app_name, ap.port)
             return False
+
+    # Orphan-safe backstop: if the tracked proc had already exited when stop ran,
+    # the SIGTERM branch above was skipped and never closed the job — but a
+    # descendant the launcher left behind can still be assigned to it. Closing the
+    # KILL_ON_JOB_CLOSE job here reaps that orphan. No-op on POSIX / when unset.
+    if ap.job_handle is not None:
+        platform_compat.close_owned_tree(ap.job_handle)
+        ap.job_handle = None
 
     if ap.proc:
         logger.info("Stopped app %s backend (pid %d)", app_name, ap.pid)

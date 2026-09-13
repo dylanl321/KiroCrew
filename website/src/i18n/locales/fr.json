@@ -2954,6 +2954,8 @@
         "cancel": "Annuler",
         "chatEmpty": "Rien n’a encore été envoyé à {{name}}.",
         "diagramFrameTitle": "Schéma de {{name}}",
+        "discardDraft": "Abandonner les modifications non enregistrées",
+        "discardDraftHint": "Les modifications non enregistrées seront définitivement supprimées.",
         "edit": "Modifier cette sortie",
         "edited": "Modifié",
         "editorLabel": "Sortie de {{name}}, modifiable",
@@ -2962,8 +2964,9 @@
         "mute": "Couper {{name}}",
         "mutedHint": "N’écoute pas la réunion",
         "revert": "Abandonner mes modifications",
-        "revertHint": "Abandonner mes modifications et afficher ce que {{name}} a écrit",
+        "revertHint": "Supprimer définitivement mes modifications et afficher ce que {{name}} a écrit",
         "save": "Enregistrer",
+        "saving": "Enregistrement…",
         "send": "Envoyer",
         "showChat": "Afficher la discussion",
         "showOutput": "Afficher le résultat",
@@ -2972,7 +2975,10 @@
       },
       "broadcastBar": {
         "heard": "Entendu : {{text}}",
+        "pausedPlaceholder": "Agents en pause — reprenez pour envoyer",
+        "pausingPlaceholder": "Mise en pause — envoi indisponible",
         "placeholder": "Dites quelque chose à tous les agents à l’écoute…",
+        "resumingPlaceholder": "Reprise — l'envoi sera bientôt disponible",
         "send": "Envoyer"
       },
       "list": {
@@ -3024,6 +3030,7 @@
         "back": "Retour",
         "endAndReview": "Terminer et passer en revue",
         "ended": "Terminée",
+        "endingReview": "Fin en cours — préparation de la revue…",
         "live": "En cours",
         "loadFailed": "Impossible d’ouvrir cette réunion",
         "moreActions": "Plus d'actions",
@@ -3031,8 +3038,10 @@
         "noAgentsHint": "Activez-en un dans la barre ci-dessus, ou choisissez un préréglage.",
         "pause": "Mettre en pause",
         "paused": "En pause",
+        "pausing": "Mise en pause…",
         "refresh": "Actualiser",
         "restart": "Relancer",
+        "resuming": "Reprise…",
         "retryAgents": "Réessayer",
         "start": "Démarrer",
         "toggleTasks": "Actions à suivre",
@@ -3167,6 +3176,7 @@
       "transcript": {
         "empty": "Aucune transcription pour le moment",
         "emptyHintLive": "Les paroles finalisées apparaîtront ici au fil de la réunion.",
+        "emptyHintPaused": "En pause — la parole apparaîtra ici après la reprise.",
         "emptyHintRecorded": "Aucune transcription n’a été enregistrée pour cette réunion.",
         "full": "La transcription est pleine. Les nouvelles paroles et diffusions ne seront plus enregistrées ni envoyées aux agents.",
         "jumpToLatest": "Aller au plus récent",
@@ -4512,7 +4522,7 @@
         "creating": "Création",
         "directly_under_the_root": "Directement sous la racine",
         "inside_name": "Dans {{name}}",
-        "n_already_existed": "{{n}} existaient déjà",
+        "n_already_set_up": "{{n}} déjà configurés",
         "n_created": "{{n}} créés",
         "n_failed": "{{n}} en échec",
         "n_possible_sub_folders_inside_packages_above": "{{n}} sous-dossiers possibles dans les paquets ci-dessus",
@@ -4526,6 +4536,7 @@
         "project_directory": "Répertoire du projet",
         "re_scan": "Relancer l’analyse",
         "results": "Résultats",
+        "root_already_exists_nothing_to_create": "Ce répertoire a déjà son dossier de barre latérale, il n'y a donc rien à créer.",
         "root_changed_scan_before_creating": "Le répertoire ci-dessus a changé — analysez-le avant de créer des dossiers.",
         "scan": "Analyser",
         "scan_a_project_directory_then_create_a_sidebar": "Analysez un répertoire de projet, puis créez un dossier de barre latérale pour chaque sous-projet retenu.",
@@ -6845,6 +6856,10 @@
       "click_to_browse_shift_click_to_copy_path": "Cliquer pour parcourir / Shift+clic pour copier le chemin",
       "click_to_open_shift_click_to_copy_path": "Cliquer pour ouvrir / Shift+clic pour copier le chemin",
       "copy_diagram_source": "Copier la source du diagramme",
+      "copy_table_csv": "Copier le tableau en CSV",
+      "copy_table_markdown": "Copier le tableau en Markdown",
+      "format_csv": "Copier CSV",
+      "format_markdown": "Copier Markdown",
       "diagram_source": "Source du diagramme",
       "copy_failed": "Échec de la copie",
       "mermaid_render_failed": "Impossible d’afficher ce diagramme. La source est affichée à la place.",
@@ -6952,12 +6967,12 @@
       "no_matches": "Aucun résultat"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "Gérer dans les paramètres",
+      "manage_visible_models": "Gérer les modèles affichés",
       "default_for_agent": "Modèle par défaut pour <agent/>",
       "filter_models": "Filtrer les modèles",
       "model_list": "Liste des modèles",
-      "models": "Modèles",
       "pin_model_unavailable": "<model/> n’est pas proposé pour le moment",
-      "reasoning": "Raisonnement",
       "set_default_for_agent": "Définir <model/> comme modèle par défaut pour <agent/>",
       "set_default_for_new_sessions": "Valeur par défaut globale pour les nouvelles sessions…",
       "type_to_filter": "Saisir pour filtrer…"
@@ -7086,6 +7101,12 @@
       "eyebrow": "Confidentialité",
       "subtitle": "Les cinq champs anonymes que {{productName}} envoie, et comment les désactiver.",
       "title": "Confidentialité"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "La coloration redémarre. La modification reste possible.",
+      "highlighting_starting_editing_available": "La coloration syntaxique démarre. La modification reste possible.",
+      "highlighting_unavailable_content_readable_reload": "La coloration syntaxique est indisponible jusqu’au rechargement. Le contenu reste lisible.",
+      "highlighting_unavailable_reload": "La coloration syntaxique est indisponible. Enregistrer ou copier le brouillon, puis recharger la page pour la restaurer ; la modification reste possible."
     },
     "projectPicker": {
       "back": "Retour",
@@ -7270,6 +7291,7 @@
       "effort": "Effort",
       "effort_help": "L’effort de raisonnement définit la durée de réflexion du modèle avant de répondre. Plus il est élevé, plus le modèle prend le temps de résoudre les problèmes difficiles (réponses plus lentes mais meilleures) ; plus il est faible, plus la réponse est rapide. Désactiver le remplacement par session revient à la valeur par défaut définie dans Paramètres → Chat, ou au choix du modèle lui-même si aucune valeur par défaut n’est définie (Fable/Opus/Sonnet uniquement).",
       "faster": "Plus rapide",
+      "configured_default_marker": "Valeur par défaut configurée",
       "reasoning_effort": "Effort de raisonnement",
       "smarter": "Plus intelligent",
       "use_configured_default": "Utiliser la valeur par défaut configurée",
@@ -7400,6 +7422,10 @@
       "selected": "sélectionné",
       "showing": "Affichage de",
       "you": "Toi"
+    },
+    "multiSelect": {
+      "deselect_all": "Tout désélectionner",
+      "select_all": "Tout sélectionner"
     },
     "searchableSelect": {
       "no_matches": "Aucun résultat",
@@ -8399,11 +8425,11 @@
       "pull_request_url": "URL de la demande d’extraction",
       "pull_request_url_placeholder": "p. ex. https://github.com/org/repo/pull/123…",
       "request_failed": "La requête du moniteur a échoué. Réessaie.",
-      "session_mode_unavailable": "Les moniteurs ne sont pas disponibles dans les sessions d’équipe ou de membre, car ces sessions acheminent le travail par leur équipe.",
+      "session_mode_unavailable": "Les automatisations ne sont pas disponibles dans les sessions d’équipe ou de membre, car ces sessions acheminent le travail via leur équipe.",
       "restart_monitor": "Redémarrer le moniteur",
       "review_ready": "Prête pour la revue",
       "save_changes": "Enregistrer les modifications",
-      "set_up_bounded_monitor": "Configurer un moniteur limité",
+      "set_up_bounded_monitor": "Surveiller plutôt une demande d’extraction",
       "sidebar_status": "Moniteur · {{status}}",
       "start_monitor": "Démarrer le moniteur",
       "statuses": {
@@ -8422,9 +8448,8 @@
       "title": "Moniteur limité de demande d’extraction",
       "tokens": "Jetons : {{count}}",
       "unknown": "Inconnu",
-      "back_to_bounded_monitor": "Retour au moniteur limité",
-      "legacy_notice": "Cette ancienne boucle invoque l’agent à chaque cycle et peut s’exécuter sans limite.",
-      "use_legacy_costly": "Utiliser l’ancienne boucle d’objectif (coûteuse)",
+      "legacy_notice": "Cette boucle d’objectif invoque l’agent à chaque cycle et peut s’exécuter sans limite.",
+      "use_legacy_costly": "Retour à la boucle d’objectif",
       "wake_instructions": "Instructions pour l’agent à son réveil",
       "wake_instructions_too_long": "Saisissez au maximum {{max}} caractères.",
       "wakes": "Réveils : {{count}}",
@@ -10398,7 +10423,21 @@
       "board_update_failed": "Échec de la mise à jour du tableau",
       "open_crew_members": "Membres de l’équipe",
       "open_crew_members_desc": "Ouvre la page Membres de l’équipe : chaque membre est un agent permanent avec son propre fil.",
-      "open_crew_members_gated_desc": "Ouvre d’abord les Réglages pour activer cet aperçu : la page n’est pas disponible avant cela."
+      "open_crew_members_gated_desc": "Ouvre d’abord les Réglages pour activer cet aperçu : la page n’est pas disponible avant cela.",
+      "remote_sessions_not_shown_in_board_view_one": "{{count}} session distante n'est pas affichée dans la vue tableau — les colonnes du tableau gèrent uniquement les sessions locales.",
+      "remote_sessions_not_shown_in_board_view_many": "{{count}} sessions distantes ne sont pas affichées dans la vue tableau — les colonnes du tableau gèrent uniquement les sessions locales.",
+      "remote_sessions_not_shown_in_board_view_other": "{{count}} sessions distantes ne sont pas affichées dans la vue tableau — les colonnes du tableau gèrent uniquement les sessions locales.",
+      "sessions_from_instance_unavailable": "Les sessions de {{names}} sont indisponibles pour le moment.",
+      "checking_remote_instances": "Vérification des instances distantes…",
+      "adopt_failed": "Impossible d'ouvrir cette session ici.",
+      "adopt_remote_bind_failed": "Impossible de joindre {{name}} pour ouvrir cette session.",
+      "adopt_target_unknown": "Cette session n'est plus ouverte sur {{name}}.",
+      "not_open_here_yet": "Sur {{name}} — cliquez pour l'ouvrir ici",
+      "on_instance": "Sur {{name}}",
+      "opening_session_locally": "Ouverture de cette session ici…",
+      "opens_here_runs_on_instance": "Ouvre cette session ici — son exécution continue sur {{name}}",
+      "opens_on_crew_switches_there": "S'ouvre sur {{name}} — bascule vers ce Crew, pas ici",
+      "remote_instances_list_unavailable": "Impossible de lister les instances distantes, leurs sessions ne sont donc pas affichées."
     },
     "connectionsPage": {
       "action_failed": "Échec de l’action : {{error}}",
@@ -10781,6 +10820,8 @@
         "inbound_webhook_tokens_registered_contexts_and_r": "Jetons de webhooks entrants, contextes enregistrés et historique des exécutions. L'API fonctionne, mais la page n'est pas terminée.",
         "open_webhooks": "Ouvrir Webhooks",
         "webhooks": "Webhooks",
+        "remote_instance_sessions": "Sessions de l’instance distante",
+        "merge_a_connected_remote_instances_live_sessions": "Fusionne les sessions actives d’une instance distante connectée dans la liste des sessions, chacune marquée d’un badge serveur. Fonctionnel, mais pas terminé.",
         "intro": {
           "webhooks_summary": "Un autre système (CI, bot de revue, pipeline de déploiement) peut lancer ton agent à ta place en envoyant un message avec un jeton d’accès que tu crées sur la page Webhooks.",
           "webhooks_where": "Une fois activé, le lien « Ouvrir Webhooks » apparaît sur cette carte dans les Réglages ; c’est de là que s’ouvre la nouvelle page Webhooks. Elle n’apparaît pas dans la barre latérale tant qu’elle n’est pas terminée. Le désactiver ne fait que masquer la page à nouveau ; les jetons que tu as créés sont conservés.",
@@ -12100,6 +12141,7 @@
         "no_matching_entries": "Aucune entrée correspondante",
         "no_semantic_entries": "Aucune entrée sémantique",
         "of": "sur",
+        "open_embedding_model_settings": "Ouvrir les paramètres du modèle d’embedding",
         "preview": "Aperçu",
         "preview_what_gets_injected_into_prompts_enter_a": "Aperçu de ce qui est injecté dans les prompts. Saisis une requête pour voir les résultats de récupération épisodique.",
         "ready": "Prêt !",
@@ -13057,6 +13099,13 @@
         "default_auto": "Par défaut (auto)",
         "default_defers_to_your_agent_config_and_then_to": "Les agents ayant leur propre modèle configuré ignorent ce réglage. «Par défaut» utilise le modèle de la configuration de l’agent, ou le modèle système par défaut lorsqu’aucun n’est configuré. Modifier ce réglage n’affecte pas les sessions déjà ouvertes.",
         "default_model": "Modèle par défaut",
+        "auto_always_visible": "Toujours visible dans les sélecteurs de modèle du chat",
+        "failed_to_save_selectable_models": "Impossible d’enregistrer les modèles sélectionnables",
+        "model_picker_all_models": "Tous les modèles ({{count}})",
+        "model_picker_selected_models": "{{selected}} / {{total}} sélectionnés",
+        "search_models": "Rechercher des modèles…",
+        "selectable_models": "Modèles sélectionnables",
+        "selectable_models_description": "Choisissez les modèles annoncés qui apparaissent dans les sélecteurs du chat. Auto et le modèle de la session active restent toujours visibles.",
         "default_normal_length": "Par défaut — longueur normale",
         "default_reasoning_effort": "Effort de raisonnement par défaut",
         "default_to_autopilot_mode": "Mode Autopilot par défaut",
@@ -14909,6 +14958,10 @@
       "plainDiff": {
         "description": "Affiche les diffs sous forme de texte unified diff sans coloration syntaxique. Consomme moins de mémoire sur les diffs volumineux.",
         "label": "Diffs en texte brut"
+      },
+      "diffLayout": {
+        "description": "Affiche l'ancien et le nouveau code sur deux colonnes ; désactivé, une seule colonne unifiée. Le changer ici ou sur n'importe quel diff l'applique partout.",
+        "label": "Diffs divisés (côte à côte)"
       }
     },
     "display": {
@@ -15046,6 +15099,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "La session sur laquelle vous avez cliqué a été supprimée et ne peut pas être ouverte.",
+      "session_open_error_named": "Impossible d’ouvrir « {{name}} ».",
+      "session_open_error": "Impossible d’ouvrir la session.",
+      "session_gone_open_failed_named": "« {{name}} » a été supprimée et ne peut pas être ouverte.",
       "truncated": "…(tronqué)"
     }
   },

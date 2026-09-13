@@ -2,8 +2,9 @@ import React, { createContext, useContext, memo, useEffect, useMemo, useRef, use
 import Clickable from './Clickable'
 import { HOVER_NONE_ACTIONS_ROW_CLS } from '../utils/touchActions'
 import { getImageDims, rememberImageDims } from '../utils/imageDims'
-import { X, Download, Plus, Minus, Search, Folder, Maximize2, Check, FileCode, Copy, Image as ImageIcon, ImageOff, GitPullRequest, MessageSquare, ExternalLink } from 'lucide-react'
+import { X, Download, Plus, Minus, Search, Folder, Maximize2, Check, FileCode, FileSpreadsheet, Copy, Image as ImageIcon, ImageOff, GitPullRequest, MessageSquare, ExternalLink } from 'lucide-react'
 import { copyCode, copyToClipboard } from '../utils/clipboard'
+import { hastTableToCsv, hastTableToMarkdown } from '../utils/tableClipboard'
 import { canonicalChatHref, sessionKeyFrom, sessionKeyFromChatHref } from '../utils/sessionKeys'
 import ReactMarkdown from 'react-markdown'
 import type { Components, ExtraProps } from 'react-markdown'
@@ -575,7 +576,7 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
   const [showSource, setShowSource] = useState(false)
   // Outcome of the last copy press. `failed` is a refused clipboard write --
   // `copyCode` RESOLVES false when the textarea fallback reports failure and
-  // REJECTS if that fallback throws, so both arms are handled; confirming
+  // never rejects, so the boolean is the only failure signal; confirming
   // unconditionally would announce "Copied" for a write that never landed.
   //
   // The two outcomes are NOT symmetric, and that asymmetry is the design:
@@ -596,14 +597,11 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
   type CopyOutcome = 'idle' | 'ok' | 'failed'
   const [copyState, setCopyState] = useState<CopyOutcome>('idle')
   const copySource = () => {
-    copyCode(code).then(
-      ok => {
-        setCopyState(ok ? 'ok' : 'failed')
-        // Only the confirmation is on a timer. See above.
-        if (ok) setTimeout(() => setCopyState('idle'), 1500)
-      },
-      () => setCopyState('failed'),
-    )
+    copyCode(code).then(ok => {
+      setCopyState(ok ? 'ok' : 'failed')
+      // Only the confirmation is on a timer. See above.
+      if (ok) setTimeout(() => setCopyState('idle'), 1500)
+    })
   }
   const copyLabel = copyState === 'ok' ? i18nT('components.markdownRenderer.copied')
     : i18nT('components.markdownRenderer.copy_diagram_source')
@@ -612,41 +610,135 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    if (!ref.current || renderedRef.current === code) return
+    const host = ref.current
+    if (!host || renderedRef.current === code) return
     renderedRef.current = code
     setFailed(false)
-    loadMermaid().then(mermaid => {
-      // Re-initialized per render so a theme switch between two diagrams is
-      // picked up; initialize() is cheap and idempotent.
-      initMermaid(mermaid)
-      return mermaid.render(`mermaid-${id}`, code)
-    }).then(({ svg }) => {
-      if (!ref.current) return
-      const range = document.createRange()
-      range.selectNodeContents(ref.current)
-      range.deleteContents()
-      ref.current.appendChild(range.createContextualFragment(svg))
-      setSvg(svg)
-    }).catch(() => {
-      if (!ref.current) return
-      // The host is EMPTIED rather than filled with a hand-built <pre>. The
-      // source is rendered declaratively below for both states that show it
-      // (`failed || showSource`), so there is exactly one element -- and one set
-      // of styles -- meaning "this diagram's source as text". Building a second
-      // one here left two spellings of the same thing, kept in sync by hand,
-      // which diverges the first time either is retouched.
-      ref.current.textContent = ''
-      setSvg('')
-      setEnlarged(false)
-      // Reset so the failed state has ONE shape. Not to prevent stranding: the
-      // source below now lives OUTSIDE the hidden host, so neither value of
-      // `showSource` can strand the reader. It is that a later successful render
-      // should show the diagram it just produced rather than silently staying on
-      // text, and while no diagram exists neither does the toggle that would
-      // bring the reader back.
-      setShowSource(false)
-      setFailed(true)
+    // Draw only once this element HAS A BOX. mermaid sizes every label by
+    // getBoundingClientRect() on a scratch <div> it appends to document.body,
+    // so what it needs is a laid-out DOCUMENT, and the one place the two go
+    // dark together is the case that bit: a remote-instance pane is a
+    // display:none <iframe> while another instance tab is active
+    // (InstancesViewport hides, never unmounts), and inside it every rect is
+    // 0. A diagram that finishes streaming there comes back as a 16px viewBox
+    // with NaN node transforms -- an empty box where the flowchart should be,
+    // and nothing redraws it until the block happens to remount.
+    //
+    // `getClientRects()` is the probe because it is EMPTY when the element has
+    // no box at all (display:none anywhere above it, the hidden iframe
+    // included) and non-empty, at zero size, whenever layout did run. The
+    // obvious signals cannot tell: inside a hidden iframe
+    // document.visibilityState stays 'visible' and clientWidth reports the
+    // last laid-out value. A ResizeObserver stays silent while the box is
+    // absent and fires on the frame it reappears, after layout, which is
+    // exactly when mermaid's measurements are trustworthy again. The probe runs
+    // before the lazy mermaid load and before mermaid.render(), and the box is
+    // watched for the whole of render(), so every async gap around the
+    // measurement is covered.
+    let live = true
+    let settled = false
+    let observer: ResizeObserver | undefined
+    let watch: ResizeObserver | undefined
+    const whenBoxed = () => new Promise<void>(resolve => {
+      if (host.getClientRects().length > 0 || typeof ResizeObserver !== 'function') {
+        resolve()
+        return
+      }
+      observer = new ResizeObserver(() => {
+        if (host.getClientRects().length === 0) return
+        observer?.disconnect()
+        observer = undefined
+        resolve()
+      })
+      observer.observe(host)
     })
+    // One attempt: wait for a box, then render WHILE WATCHING THE BOX. render()
+    // is itself async -- it lazy-loads the diagram's own chunk, and image shapes
+    // load apart -- so the pane can go hidden after the probe and even come back
+    // before render() resolves, with some or all labels measured at 0 in
+    // between. A point check at the end would pass on those. The observer
+    // reports the box going to 0x0 on the first frame it is gone, so any hide
+    // that lasts a frame is caught even when the box is back by the end. A hide
+    // that starts AND ends inside one frame (under ~16ms) is not reported; no
+    // tab switch is that fast, and waiting a frame to find out would tax every
+    // diagram for it. Lost box, or no box at the end: discard that SVG and go
+    // round again. Without ResizeObserver there is nothing to wait on, so the
+    // result stands as it did before this change rather than rendering in a
+    // loop.
+    const attempt = (mermaid: MermaidApi): Promise<{ svg: string } | null> =>
+      whenBoxed()
+        .then(() => {
+          if (!live) return null
+          let lostBox = false
+          if (typeof ResizeObserver === 'function') {
+            watch = new ResizeObserver(() => {
+              if (host.getClientRects().length === 0) lostBox = true
+            })
+            watch.observe(host)
+          }
+          // Re-initialized per render so a theme switch between two diagrams is
+          // picked up; initialize() is cheap and idempotent.
+          initMermaid(mermaid)
+          return mermaid.render(`mermaid-${id}`, code)
+            .then(result => ({ result, lostBox }))
+            .finally(() => {
+              watch?.disconnect()
+              watch = undefined
+            })
+        })
+        .then(step => {
+          if (!step || !live) return null
+          const boxless = step.lostBox || host.getClientRects().length === 0
+          if (boxless && typeof ResizeObserver === 'function') return attempt(mermaid)
+          return step.result
+        })
+    whenBoxed()
+      .then(loadMermaid)
+      .then(attempt)
+      .then(result => {
+        if (!result || !ref.current) return
+        settled = true
+        const range = document.createRange()
+        range.selectNodeContents(ref.current)
+        range.deleteContents()
+        ref.current.appendChild(range.createContextualFragment(result.svg))
+        setSvg(result.svg)
+      })
+      .catch(() => {
+        if (!live || !ref.current) return
+        settled = true
+        // The host is EMPTIED rather than filled with a hand-built <pre>. The
+        // source is rendered declaratively below for both states that show it
+        // (`failed || showSource`), so there is exactly one element -- and one set
+        // of styles -- meaning "this diagram's source as text". Building a second
+        // one here left two spellings of the same thing, kept in sync by hand,
+        // which diverges the first time either is retouched.
+        ref.current.textContent = ''
+        setSvg('')
+        setEnlarged(false)
+        // Reset so the failed state has ONE shape. Not to prevent stranding: the
+        // source below now lives OUTSIDE the hidden host, so neither value of
+        // `showSource` can strand the reader. It is that a later successful render
+        // should show the diagram it just produced rather than silently staying on
+        // text, and while no diagram exists neither does the toggle that would
+        // bring the reader back.
+        setShowSource(false)
+        setFailed(true)
+      })
+    return () => {
+      // Torn down before anything was drawn: abandon this chain and forget the
+      // code too, or the guard above would make the next run (a new code
+      // string, or StrictMode's dev-only replay of this effect) skip a diagram
+      // that never rendered. Once the SVG or the failure notice is on screen
+      // there is nothing to abandon, and the guard keeps doing its job.
+      if (settled) return
+      live = false
+      observer?.disconnect()
+      observer = undefined
+      watch?.disconnect()
+      watch = undefined
+      renderedRef.current = ''
+    }
   }, [code, id])
 
   return (
@@ -1609,6 +1701,98 @@ function jiraCardMeta(link: PullRequestLink): LinkMeta {
   }
 }
 
+const TABLE_ACTION_BTN_CLS = 'flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-muted hover:text-text hover:bg-bg-hover cursor-pointer'
+
+/** A markdown table plus the row of copy actions beneath it.
+ *
+ *  Selecting a rendered table by hand and pasting it produces tab-separated
+ *  cells at best and a run of words at worst, so the copy has to be offered.
+ *  Two targets, because they are pasted into different places: GFM Markdown
+ *  for a doc, an issue, or another chat, and CSV for a spreadsheet. Both are
+ *  serialized from the hast `node` react-markdown hands this override, never
+ *  from the DOM -- see `tableClipboard.ts` for why (alignment is not forwarded
+ *  to the DOM, and inline-code chips carry UI a text walk cannot tell apart
+ *  from content).
+ *
+ *  The row follows the code block's pattern exactly: hidden until the table is
+ *  hovered or focused (`group-hover` / `group-focus-within`), and always shown
+ *  on a hover-less (touch) device through `HOVER_NONE_ACTIONS_ROW_CLS`, so it
+ *  is discoverable there without adding permanent chrome under every table on
+ *  a desktop. It sits BELOW the table, not over the header cells, so it never
+ *  covers a column label. Each button carries a short visible verb label
+ *  beside its glyph ("Copy Markdown", "Copy CSV") -- a touch screen shows no
+ *  tooltip, so the word alone must say what a tap does; it flips to "Copied!"
+ *  on success so the confirmation reads as text, not only as a colour.
+ *
+ *  The horizontal-scroll wrapper and the table's own class contract are
+ *  unchanged (`MarkdownRenderer.tableWrap.test.tsx` pins them): the wrapper
+ *  still owns `overflow-x-auto`, and this component only adds a sibling row
+ *  after it. */
+function MarkdownTable({ node, children }: { node?: HastElement; children?: React.ReactNode }) {
+  type CopyTarget = 'markdown' | 'csv'
+  type CopyOutcome = { state: 'idle' } | { state: 'ok'; target: CopyTarget } | { state: 'failed' }
+  const [outcome, setOutcome] = useState<CopyOutcome>({ state: 'idle' })
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timerRef.current != null) clearTimeout(timerRef.current) }, [])
+
+  const copy = (target: CopyTarget) => {
+    if (!node) return
+    const text = target === 'markdown' ? hastTableToMarkdown(node) : hastTableToCsv(node)
+    if (text.length === 0) return
+    copyToClipboard(text).then(
+      ok => {
+        if (!ok) { setOutcome({ state: 'failed' }); return }
+        setOutcome({ state: 'ok', target })
+        if (timerRef.current != null) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(() => { setOutcome({ state: 'idle' }); timerRef.current = null }, 1500)
+      },
+      () => setOutcome({ state: 'failed' }),
+    )
+  }
+
+  const label = (target: CopyTarget) => outcome.state === 'ok' && outcome.target === target
+    ? i18nT('components.markdownRenderer.copied')
+    : target === 'markdown'
+      ? i18nT('components.markdownRenderer.copy_table_markdown')
+      : i18nT('components.markdownRenderer.copy_table_csv')
+  // The visible word carries the verb ("Copy Markdown"), because on a touch
+  // screen it is the only label there is, and it flips to "Copied!" with the
+  // check so the confirmation is readable, not just a colour change.
+  const word = (target: CopyTarget) => outcome.state === 'ok' && outcome.target === target
+    ? i18nT('components.markdownRenderer.copied')
+    : target === 'markdown'
+      ? i18nT('components.markdownRenderer.format_markdown')
+      : i18nT('components.markdownRenderer.format_csv')
+  const glyph = (target: CopyTarget, Icon: typeof Copy) => outcome.state === 'ok' && outcome.target === target
+    ? <Check size={13} className="text-ok" aria-hidden="true" />
+    : <Icon size={13} aria-hidden="true" />
+
+  return (
+    <div className="my-3 group/table" data-testid="markdown-table">
+      <div className="overflow-x-auto"><table {...sp(node)} className="min-w-full border-collapse text-sm [overflow-wrap:normal] [word-break:normal]">{children}</table></div>
+      <div className={`mt-0.5 flex items-center justify-end gap-1 select-none opacity-0 group-hover/table:opacity-100 group-focus-within/table:opacity-100 transition-opacity ${HOVER_NONE_ACTIONS_ROW_CLS}`}>
+        <button type="button" data-testid="table-copy-markdown" className={TABLE_ACTION_BTN_CLS} onClick={() => copy('markdown')} title={label('markdown')} aria-label={label('markdown')}>
+          {glyph('markdown', Copy)}
+          <span aria-hidden="true">{word('markdown')}</span>
+        </button>
+        <button type="button" data-testid="table-copy-csv" className={TABLE_ACTION_BTN_CLS} onClick={() => copy('csv')} title={label('csv')} aria-label={label('csv')}>
+          {glyph('csv', FileSpreadsheet)}
+          <span aria-hidden="true">{word('csv')}</span>
+        </button>
+      </div>
+      {/* No hand-off, for the same reason as the mermaid notices above: this
+          renderer is embedded in hosts holding unsaved drafts it cannot
+          identify -- MarkdownPanel's editable preview, the chat composer -- so
+          navigating to the chat could discard what the user typed. Dismissable,
+          like the mermaid copy notice: one refused clipboard write must not
+          leave a permanent red line under the table in the transcript. */}
+      {outcome.state === 'failed' && (
+        <ErrorNotice variant="inline" className="mt-1" message={i18nT('components.markdownRenderer.copy_failed')} onDismiss={() => setOutcome({ state: 'idle' })} />
+      )}
+    </div>
+  )
+}
+
 const MD_COMPONENTS: Components = {
   code({ className, children, ...props }) {
     // Only a <code> inside a <pre> may render a block-level component here
@@ -1645,8 +1829,9 @@ const MD_COMPONENTS: Components = {
   // table wider than the viewport overflow to its real width and scroll inside
   // the wrapper, while a narrow table still fills the container. A genuinely
   // oversized token now widens its column instead of breaking, which the
-  // horizontal scroll already handles.
-  table({ node, children }) { return <div className="overflow-x-auto my-3"><table {...sp(node)} className="min-w-full border-collapse text-sm [overflow-wrap:normal] [word-break:normal]">{children}</table></div> },
+  // horizontal scroll already handles. Those classes now live on
+  // `MarkdownTable`, which also adds the copy row beneath the table.
+  table({ node, children }) { return <MarkdownTable node={node}>{children}</MarkdownTable> },
   // Headers carry the column's meaning, so never break them mid-label.
   th({ node, children }) { return <th {...spa('th', node)} className="text-left text-muted text-[13px] font-medium px-3 py-2 border-b border-border bg-bg-elevated whitespace-nowrap">{children}</th> },
   td({ node, children }) { return <td {...spa('td', node)} className="px-3 py-2 border-b border-border text-sm">{children}</td> },

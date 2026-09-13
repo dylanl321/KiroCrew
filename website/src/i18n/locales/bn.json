@@ -2847,6 +2847,8 @@
         "cancel": "বাতিল",
         "chatEmpty": "{{name}}-কে এখনও কিছু পাঠানো হয়নি।",
         "diagramFrameTitle": "{{name}}-এর চিত্র",
+        "discardDraft": "অসংরক্ষিত পরিবর্তন বাতিল করুন",
+        "discardDraftHint": "অসংরক্ষিত পরিবর্তনগুলি স্থায়ীভাবে মুছে যাবে।",
         "edit": "এই আউটপুট সম্পাদনা করুন",
         "edited": "সম্পাদিত",
         "editorLabel": "{{name}}-এর আউটপুট, সম্পাদনাযোগ্য",
@@ -2855,8 +2857,9 @@
         "mute": "{{name}}-কে নিঃশব্দ করুন",
         "mutedHint": "মিটিং শুনছে না",
         "revert": "আমার সম্পাদনা বাদ দিন",
-        "revertHint": "আমার সম্পাদনা বাদ দিয়ে {{name}} যা লিখেছে তা দেখান",
+        "revertHint": "আমার সম্পাদনা স্থায়ীভাবে মুছে {{name}} যা লিখেছে তা দেখান",
         "save": "সংরক্ষণ করুন",
+        "saving": "সংরক্ষণ করা হচ্ছে…",
         "send": "পাঠান",
         "showChat": "চ্যাট দেখান",
         "showOutput": "আউটপুট দেখান",
@@ -2865,7 +2868,10 @@
       },
       "broadcastBar": {
         "heard": "শোনা গেল: {{text}}",
+        "pausedPlaceholder": "এজেন্ট বিরতিতে — পাঠাতে আবার শুরু করুন",
+        "pausingPlaceholder": "বিরতি দেওয়া হচ্ছে — পাঠানো বন্ধ আছে",
         "placeholder": "শুনছে এমন সব এজেন্টকে কিছু বলুন…",
+        "resumingPlaceholder": "আবার শুরু হচ্ছে — শীঘ্রই পাঠানো যাবে",
         "send": "পাঠান"
       },
       "list": {
@@ -2916,6 +2922,7 @@
         "back": "পিছনে",
         "endAndReview": "শেষ করে পর্যালোচনা করুন",
         "ended": "শেষ হয়েছে",
+        "endingReview": "শেষ হচ্ছে — রিভিউ প্রস্তুত হচ্ছে…",
         "live": "চলছে",
         "loadFailed": "এই মিটিংটি খোলা গেল না",
         "moreActions": "আরও অ্যাকশন",
@@ -2923,8 +2930,10 @@
         "noAgentsHint": "উপরের বার থেকে একটি চালু করুন, বা কোনও প্রিসেট বেছে নিন।",
         "pause": "থামান",
         "paused": "থামানো",
+        "pausing": "থামানো হচ্ছে…",
         "refresh": "রিফ্রেশ করুন",
         "restart": "আবার শুরু করুন",
+        "resuming": "চালিয়ে যাওয়া হচ্ছে…",
         "retryAgents": "আবার চেষ্টা করুন",
         "start": "শুরু করুন",
         "toggleTasks": "করণীয়",
@@ -3056,6 +3065,7 @@
       "transcript": {
         "empty": "এখনও কোনো প্রতিলিপি নেই",
         "emptyHintLive": "মিটিং চলার সাথে সাথে চূড়ান্ত বক্তব্য এখানে দেখা যাবে।",
+        "emptyHintPaused": "বিরতিতে — আবার শুরু করলে বক্তৃতা এখানে দেখা যাবে।",
         "emptyHintRecorded": "এই মিটিংয়ের জন্য কোনো প্রতিলিপি রেকর্ড করা হয়নি।",
         "full": "প্রতিলিপি পূর্ণ। নতুন বক্তব্য ও সম্প্রচার আর রেকর্ড করা হবে না বা এজেন্টদের কাছে পাঠানো হবে না।",
         "jumpToLatest": "সাম্প্রতিক অংশে যান",
@@ -4385,7 +4395,7 @@
         "creating": "তৈরি হচ্ছে",
         "directly_under_the_root": "সরাসরি রুটের নিচে",
         "inside_name": "{{name}}-এর ভিতরে",
-        "n_already_existed": "{{n}}টি আগেই ছিল",
+        "n_already_set_up": "{{n}}টি ইতিমধ্যে সেট আপ",
         "n_created": "{{n}}টি তৈরি হয়েছে",
         "n_failed": "{{n}}টি ব্যর্থ",
         "n_possible_sub_folders_inside_packages_above": "উপরের প্যাকেজগুলোর ভিতরে {{n}}টি সম্ভাব্য সাব-ফোল্ডার",
@@ -4399,6 +4409,7 @@
         "project_directory": "প্রকল্প ডিরেক্টরি",
         "re_scan": "আবার স্ক্যান করুন",
         "results": "ফলাফল",
+        "root_already_exists_nothing_to_create": "এই ডিরেক্টরির সাইডবার ফোল্ডার ইতিমধ্যে রয়েছে, তাই তৈরি করার মতো কিছু বাকি নেই।",
         "root_changed_scan_before_creating": "উপরের ডিরেক্টরি পরিবর্তিত হয়েছে — ফোল্ডার তৈরির আগে এটি স্ক্যান করুন।",
         "scan": "স্ক্যান করুন",
         "scan_a_project_directory_then_create_a_sidebar": "একটি প্রকল্প ডিরেক্টরি স্ক্যান করুন, তারপর আপনি বেছে নেওয়া প্রতিটি উপ-প্রকল্পের জন্য একটি সাইডবার ফোল্ডার তৈরি করুন।",
@@ -6743,6 +6754,10 @@
       "click_to_browse_shift_click_to_copy_path": "ব্রাউজ করতে ক্লিক করুন / পাথ কপি করতে Shift+ক্লিক করুন",
       "click_to_open_shift_click_to_copy_path": "খুলতে ক্লিক করুন / পাথ কপি করতে Shift+ক্লিক করুন",
       "copy_diagram_source": "ডায়াগ্রামের সোর্স কপি করুন",
+      "copy_table_csv": "টেবিলটি CSV হিসেবে কপি করুন",
+      "copy_table_markdown": "টেবিলটি Markdown হিসেবে কপি করুন",
+      "format_csv": "CSV কপি করুন",
+      "format_markdown": "Markdown কপি করুন",
       "diagram_source": "ডায়াগ্রামের সোর্স",
       "copy_failed": "কপি ব্যর্থ",
       "mermaid_render_failed": "এই ডায়াগ্রামটি রেন্ডার করা যায়নি। এর পরিবর্তে সোর্স দেখানো হচ্ছে।",
@@ -6850,12 +6865,12 @@
       "no_matches": "কোনো মিল নেই"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "সেটিংসে পরিচালনা করুন",
+      "manage_visible_models": "দৃশ্যমান মডেল পরিচালনা করুন",
       "default_for_agent": "<agent/>-এর ডিফল্ট মডেল",
       "filter_models": "মডেল ফিল্টার করুন",
       "model_list": "মডেল তালিকা",
-      "models": "মডেল",
       "pin_model_unavailable": "<model/> এই মুহূর্তে অফার করা হচ্ছে না",
-      "reasoning": "রিজনিং",
       "set_default_for_agent": "<model/>-কে <agent/>-এর ডিফল্ট মডেল করো",
       "set_default_for_new_sessions": "নতুন সেশনের জন্য গ্লোবাল ডিফল্ট…",
       "type_to_filter": "ফিল্টার করতে টাইপ করুন…"
@@ -6982,6 +6997,12 @@
       "eyebrow": "গোপনীয়তা",
       "subtitle": "{{productName}} যে পাঁচটি বেনামী ফিল্ড পাঠায়, এবং কীভাবে তা বন্ধ করবেন।",
       "title": "গোপনীয়তা"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "হাইলাইটিং পুনরায় চালু হচ্ছে। সম্পাদনা করা যাবে।",
+      "highlighting_starting_editing_available": "সিনট্যাক্স হাইলাইটিং শুরু হচ্ছে। সম্পাদনা করা যাবে।",
+      "highlighting_unavailable_content_readable_reload": "পুনরায় লোড না করা পর্যন্ত সিনট্যাক্স হাইলাইটিং অনুপলব্ধ। বিষয়বস্তু পড়া যাবে।",
+      "highlighting_unavailable_reload": "সিনট্যাক্স হাইলাইটিং অনুপলব্ধ। আপনার খসড়া সংরক্ষণ বা অনুলিপি করুন, তারপর সিনট্যাক্স হাইলাইটিং পুনরুদ্ধার করতে পুনরায় লোড করুন; সম্পাদনা করা যাবে।"
     },
     "projectPicker": {
       "back": "পেছনে",
@@ -7160,6 +7181,7 @@
       "effort": "প্রচেষ্টা",
       "effort_help": "রিজনিং প্রচেষ্টা ঠিক করে দেয় উত্তর দেওয়ার আগে মডেল কতক্ষণ ভাববে। বেশি মানে কঠিন সমস্যা নিয়ে বেশি সময় ধরে রিজনিং (ধীর, কিন্তু ভালো উত্তর); কম মানে দ্রুত। সেশন-ভিত্তিক ওভাররাইড বন্ধ করলে সেটিংস → চ্যাট-এর ডিফল্টে ফিরে যায়, আর কোনো ডিফল্ট সেট না থাকলে মডেলের নিজের পছন্দে (শুধু Fable/Opus/Sonnet)।",
       "faster": "দ্রুততর",
+      "configured_default_marker": "কনফিগার করা ডিফল্ট",
       "reasoning_effort": "রিজনিং প্রচেষ্টা",
       "smarter": "আরও বুদ্ধিমান",
       "use_configured_default": "কনফিগার করা ডিফল্ট ব্যবহার করুন",
@@ -7290,6 +7312,10 @@
       "selected": "নির্বাচিত",
       "showing": "দেখানো হচ্ছে",
       "you": "তুমি"
+    },
+    "multiSelect": {
+      "deselect_all": "নির্বাচন বাতিল করুন",
+      "select_all": "সব নির্বাচন করুন"
     },
     "searchableSelect": {
       "no_matches": "কোনো মিল নেই",
@@ -8285,11 +8311,11 @@
       "pull_request_url": "পুল রিকোয়েস্ট URL",
       "pull_request_url_placeholder": "যেমন https://github.com/org/repo/pull/123…",
       "request_failed": "মনিটরের অনুরোধ ব্যর্থ হয়েছে। আবার চেষ্টা করো।",
-      "session_mode_unavailable": "ক্রু বা সদস্য সেশনে মনিটর উপলভ্য নয়, কারণ এই সেশনগুলো তাদের ক্রুর মাধ্যমে কাজ পরিচালনা করে।",
+      "session_mode_unavailable": "ক্রু ও সদস্য সেশনে অটোমেশন উপলব্ধ নয়, কারণ এই সেশনগুলো তাদের ক্রুর মাধ্যমে কাজ পাঠায়।",
       "restart_monitor": "মনিটর আবার চালু করুন",
       "review_ready": "পর্যালোচনার জন্য প্রস্তুত",
       "save_changes": "পরিবর্তন সংরক্ষণ করুন",
-      "set_up_bounded_monitor": "সীমাবদ্ধ মনিটর সেট করুন",
+      "set_up_bounded_monitor": "পরিবর্তে একটি পুল রিকোয়েস্ট মনিটর করুন",
       "sidebar_status": "মনিটর · {{status}}",
       "start_monitor": "মনিটর চালু করুন",
       "statuses": {
@@ -8308,9 +8334,8 @@
       "title": "সীমাবদ্ধ পুল রিকোয়েস্ট মনিটর",
       "tokens": "টোকেন: {{count}}",
       "unknown": "অজানা",
-      "back_to_bounded_monitor": "সীমাবদ্ধ মনিটরে ফিরুন",
-      "legacy_notice": "এই পুরোনো লুপটি প্রতিটি চক্রে এজেন্টকে চালায় এবং কোনো সীমা ছাড়াই চলতে পারে।",
-      "use_legacy_costly": "পুরোনো লক্ষ্য লুপ ব্যবহার করুন (ব্যয়বহুল)",
+      "legacy_notice": "এই লক্ষ্য লুপটি প্রতিটি চক্রে এজেন্টকে চালায় এবং কোনো সীমা ছাড়াই চলতে পারে।",
+      "use_legacy_costly": "লক্ষ্য লুপে ফিরে যান",
       "wake_instructions": "এজেন্ট সক্রিয় হলে তার জন্য নির্দেশনা",
       "wake_instructions_too_long": "{{max}} অক্ষরের বেশি লিখবেন না।",
       "wakes": "সক্রিয়করণ: {{count}}",
@@ -10244,7 +10269,20 @@
       "board_update_failed": "বোর্ড আপডেট ব্যর্থ",
       "open_crew_members": "ক্রু সদস্যরা",
       "open_crew_members_desc": "ক্রু সদস্যদের পেজ খোলে — প্রত্যেক সদস্য একজন স্থায়ী এজেন্ট, যার নিজস্ব থ্রেড আছে।",
-      "open_crew_members_gated_desc": "প্রথমে সেটিংস খোলে, এই প্রিভিউ চালু করার জন্য — চালু না করা পর্যন্ত পেজটি পাওয়া যাবে না।"
+      "open_crew_members_gated_desc": "প্রথমে সেটিংস খোলে, এই প্রিভিউ চালু করার জন্য — চালু না করা পর্যন্ত পেজটি পাওয়া যাবে না।",
+      "remote_sessions_not_shown_in_board_view_one": "বোর্ড ভিউতে {{count}}টি রিমোট সেশন দেখানো হয় না — বোর্ডের কলামগুলি শুধুমাত্র স্থানীয় সেশন পরিচালনা করে।",
+      "remote_sessions_not_shown_in_board_view_other": "বোর্ড ভিউতে {{count}}টি রিমোট সেশন দেখানো হয় না — বোর্ডের কলামগুলি শুধুমাত্র স্থানীয় সেশন পরিচালনা করে।",
+      "sessions_from_instance_unavailable": "{{names}} থেকে সেশনগুলি এই মুহূর্তে অনুপলব্ধ।",
+      "checking_remote_instances": "রিমোট ইনস্ট্যান্স যাচাই করা হচ্ছে…",
+      "adopt_failed": "এই সেশনটি এখানে খোলা যায়নি।",
+      "adopt_remote_bind_failed": "এই সেশনটি খুলতে {{name}}-এ পৌঁছানো যায়নি।",
+      "adopt_target_unknown": "এই সেশনটি আর {{name}}-এ খোলা নেই।",
+      "not_open_here_yet": "{{name}} এ — এখানে খুলতে ক্লিক করুন",
+      "on_instance": "{{name}} এ",
+      "opening_session_locally": "এই সেশনটি এখানে খোলা হচ্ছে…",
+      "opens_here_runs_on_instance": "এই সেশনটি এখানে খোলে — এর কাজ {{name}}-এ চলতে থাকে",
+      "opens_on_crew_switches_there": "{{name}} এ খোলে — সেই Crew-এ চলে যায়, এখানে নয়",
+      "remote_instances_list_unavailable": "রিমোট ইনস্ট্যান্স তালিকাভুক্ত করা যায়নি, তাই সেগুলির সেশন দেখানো হচ্ছে না।"
     },
     "connectionsPage": {
       "action_failed": "অ্যাকশন ব্যর্থ: {{error}}",
@@ -10626,6 +10664,8 @@
         "inbound_webhook_tokens_registered_contexts_and_r": "ইনবাউন্ড ওয়েবহুক টোকেন, নিবন্ধিত কনটেক্সট ও রান ইতিহাস। API কাজ করে, তবে পেজটি এখনও শেষ হয়নি।",
         "open_webhooks": "ওয়েবহুক খুলুন",
         "webhooks": "ওয়েবহুক",
+        "remote_instance_sessions": "রিমোট ইনস্ট্যান্সের সেশন",
+        "merge_a_connected_remote_instances_live_sessions": "সংযুক্ত রিমোট ইনস্ট্যান্সের চলমান সেশনগুলি সেশন তালিকায় একত্রিত করে, প্রতিটির সঙ্গে একটি সার্ভার ব্যাজ দেখায়। কাজ করে, তবে এখনও সম্পূর্ণ নয়।",
         "intro": {
           "webhooks_summary": "অন্য কোনো সিস্টেম (CI, রিভিউ বট, ডিপ্লয় পাইপলাইন) Webhooks পেজে তৈরি access token দিয়ে একটি মেসেজ পাঠিয়ে তোমার হয়ে এজেন্ট চালাতে পারে।",
           "webhooks_where": "এটি চালু করলে সেটিংসে এই কার্ডে “Webhooks খোলো” লিংক দেখা যায়; নতুন Webhooks পেজ সেখান থেকেই খোলে। পেজ শেষ না হওয়া পর্যন্ত এটি সাইডবারে দেখায় না। বন্ধ করলে পেজটি আবার লুকিয়ে যায় মাত্র; তোমার তৈরি token থেকে যায়।",
@@ -11932,6 +11972,7 @@
         "no_matching_entries": "মিলে যাওয়া কোনো এন্ট্রি নেই",
         "no_semantic_entries": "কোনো সিমান্টিক এন্ট্রি নেই",
         "of": "এর মধ্যে",
+        "open_embedding_model_settings": "এমবেডিং মডেল সেটিংস খুলুন",
         "preview": "প্রিভিউ",
         "preview_what_gets_injected_into_prompts_enter_a": "প্রম্পটে কী ঢোকানো হয় তার প্রিভিউ দেখো। এপিসোডিক রিট্রিভালের ফলাফল দেখতে একটি কোয়েরি লেখো।",
         "ready": "প্রস্তুত!",
@@ -12879,6 +12920,13 @@
         "default_auto": "ডিফল্ট (অটো)",
         "default_defers_to_your_agent_config_and_then_to": "নিজস্ব কনফিগার করা মডেল থাকা এজেন্টরা এই সেটিং উপেক্ষা করে। 'ডিফল্ট' এজেন্ট কনফিগারেশনের মডেল ব্যবহার করে, কোনোটি কনফিগার না থাকলে সিস্টেমের ডিফল্ট ব্যবহার করে। এটি বদলালে ইতিমধ্যে খোলা সেশনগুলোর ওপর প্রভাব পড়ে না।",
         "default_model": "ডিফল্ট মডেল",
+        "auto_always_visible": "চ্যাট মডেল নির্বাচকে সবসময় দৃশ্যমান",
+        "failed_to_save_selectable_models": "নির্বাচনযোগ্য মডেল সংরক্ষণ করা যায়নি",
+        "model_picker_all_models": "সব মডেল ({{count}})",
+        "model_picker_selected_models": "নির্বাচিত {{selected}} / {{total}}",
+        "search_models": "মডেল খুঁজুন…",
+        "selectable_models": "নির্বাচনযোগ্য মডেল",
+        "selectable_models_description": "চ্যাটের মডেল নির্বাচকে কোন বিজ্ঞাপিত মডেল দেখা যাবে তা বেছে নিন। Auto এবং সক্রিয় সেশনের মডেল সবসময় দৃশ্যমান থাকবে।",
         "default_normal_length": "ডিফল্ট — স্বাভাবিক দৈর্ঘ্য",
         "default_reasoning_effort": "ডিফল্ট রিজনিং এফোর্ট",
         "default_to_autopilot_mode": "ডিফল্টে অটোপাইলট মোড",
@@ -14717,6 +14765,10 @@
       "plainDiff": {
         "description": "পার্থক্য সিনট্যাক্স হাইলাইট ছাড়া সাধারণ unified diff টেক্সট হিসেবে দেখান। বড় diff-এ কম মেমরি লাগে।",
         "label": "সাধারণ diff"
+      },
+      "diffLayout": {
+        "description": "পুরনো ও নতুন কোড দুই কলামে দেখায়; বন্ধ থাকলে একটি ইউনিফায়েড কলাম দেখায়। এখানে বা যেকোনো diff-এ বদলালে তা সর্বত্র প্রযোজ্য হয়।",
+        "label": "স্প্লিট (পাশাপাশি) diff"
       }
     },
     "display": {
@@ -14854,6 +14906,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "আপনি যে সেশনে ক্লিক করেছেন সেটি মুছে ফেলা হয়েছে এবং খোলা যাবে না।",
+      "session_open_error_named": "“{{name}}” খোলা যায়নি।",
+      "session_open_error": "সেশনটি খোলা যায়নি।",
+      "session_gone_open_failed_named": "“{{name}}” মুছে ফেলা হয়েছে, তাই এটি খোলা যাবে না।",
       "truncated": "…(সংক্ষিপ্ত করা হয়েছে)"
     }
   },

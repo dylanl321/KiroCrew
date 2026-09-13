@@ -2842,6 +2842,8 @@
         "cancel": "キャンセル",
         "chatEmpty": "{{name}}にはまだ何も送信されていません。",
         "diagramFrameTitle": "{{name}}ダイアグラム",
+        "discardDraft": "未保存の変更を破棄",
+        "discardDraftHint": "未保存の変更は完全に削除されます。",
         "edit": "この出力を編集",
         "edited": "編集済み",
         "editorLabel": "{{name}}の出力（編集可能）",
@@ -2850,8 +2852,9 @@
         "mute": "{{name}}をミュート",
         "mutedHint": "会議をリッスンしていません",
         "revert": "自分の編集を破棄",
-        "revertHint": "自分の編集を破棄して{{name}}が書いた内容を表示",
+        "revertHint": "自分の編集を完全に削除して{{name}}が書いた内容を表示",
         "save": "保存",
+        "saving": "保存中…",
         "send": "送信",
         "showChat": "チャットを表示",
         "showOutput": "出力を表示",
@@ -2860,7 +2863,10 @@
       },
       "broadcastBar": {
         "heard": "聞き取り:{{text}}",
+        "pausedPlaceholder": "エージェントは一時停止中 — 送信するには再開してください",
+        "pausingPlaceholder": "一時停止中 — 送信できません",
         "placeholder": "すべてのリッスンしているエージェントに何かを言う…",
+        "resumingPlaceholder": "再開中 — まもなく送信できます",
         "send": "送信"
       },
       "list": {
@@ -2910,6 +2916,7 @@
         "back": "戻る",
         "endAndReview": "終了して確認",
         "ended": "終了",
+        "endingReview": "終了処理中 — レビューを準備しています…",
         "live": "ライブ",
         "loadFailed": "この会議を開くことができませんでした",
         "moreActions": "その他の操作",
@@ -2917,8 +2924,10 @@
         "noAgentsHint": "上部のバーで1つを有効にするか、プリセットを選択してください。",
         "pause": "一時停止",
         "paused": "一時停止中",
+        "pausing": "一時停止中…",
         "refresh": "更新",
         "restart": "もう一度開始",
+        "resuming": "再開中…",
         "retryAgents": "再試行",
         "start": "開始",
         "toggleTasks": "アクションアイテム",
@@ -3047,6 +3056,7 @@
       "transcript": {
         "empty": "文字起こしはまだありません",
         "emptyHintLive": "会議が進むと、確定した発言がここに表示されます。",
+        "emptyHintPaused": "一時停止中 — 再開後に発話がここに表示されます。",
         "emptyHintRecorded": "この会議では文字起こしが記録されませんでした。",
         "full": "文字起こしが上限に達しました。新しい音声や一斉送信は記録されず、エージェントにも送信されません。",
         "jumpToLatest": "最新に移動",
@@ -4360,7 +4370,7 @@
         "creating": "作成中",
         "directly_under_the_root": "ルートの直下",
         "inside_name": "{{name}} 内",
-        "n_already_existed": "{{n}} 件は既存",
+        "n_already_set_up": "{{n}} 件は設定済み",
         "n_created": "{{n}} 件作成",
         "n_failed": "{{n}} 件失敗",
         "n_possible_sub_folders_inside_packages_above": "上のパッケージ内にあるサブフォルダー候補 {{n}} 件",
@@ -4374,6 +4384,7 @@
         "project_directory": "プロジェクトディレクトリ",
         "re_scan": "再スキャン",
         "results": "結果",
+        "root_already_exists_nothing_to_create": "このディレクトリには既にサイドバーのフォルダーがあるため、作成するものはありません。",
         "root_changed_scan_before_creating": "上のディレクトリが変更されました。フォルダーを作成する前にスキャンしてください。",
         "scan": "スキャン",
         "scan_a_project_directory_then_create_a_sidebar": "プロジェクトのディレクトリをスキャンし、選んだサブプロジェクトごとにサイドバーのフォルダーを作成します。",
@@ -6641,6 +6652,10 @@
       "click_to_browse_shift_click_to_copy_path": "クリックして参照 / Shift+クリックでパスをコピー",
       "click_to_open_shift_click_to_copy_path": "クリックして開く / Shift+クリックでパスをコピー",
       "copy_diagram_source": "図のソースをコピー",
+      "copy_table_csv": "表を CSV としてコピー",
+      "copy_table_markdown": "表を Markdown としてコピー",
+      "format_csv": "CSV をコピー",
+      "format_markdown": "Markdown をコピー",
       "diagram_source": "図のソース",
       "copy_failed": "コピーできませんでした",
       "mermaid_render_failed": "この図を描画できませんでした。代わりにソースを表示します。",
@@ -6748,12 +6763,12 @@
       "no_matches": "一致するものがありません"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "設定で管理",
+      "manage_visible_models": "表示するモデルを管理",
       "default_for_agent": "<agent/> のデフォルトモデル",
       "filter_models": "モデルをフィルター",
       "model_list": "モデルリスト",
-      "models": "モデル",
       "pin_model_unavailable": "<model/> は現在提供されていません",
-      "reasoning": "推論",
       "set_default_for_agent": "<model/> を <agent/> のデフォルトモデルに設定",
       "set_default_for_new_sessions": "新規セッションのグローバルデフォルト…",
       "type_to_filter": "フィルターするには入力…"
@@ -6878,6 +6893,12 @@
       "eyebrow": "プライバシー",
       "subtitle": "{{productName}}が送信する5つの匿名フィールドと、それをオフにする方法。",
       "title": "プライバシー"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "ハイライトを再起動しています。編集は続けられます。",
+      "highlighting_starting_editing_available": "構文ハイライトを開始しています。編集は続けられます。",
+      "highlighting_unavailable_content_readable_reload": "再読み込みするまで構文ハイライトを利用できません。内容は引き続き読めます。",
+      "highlighting_unavailable_reload": "構文ハイライトを利用できません。下書きを保存またはコピーしてから、構文ハイライトを復元するために再読み込みしてください。編集は続けられます。"
     },
     "projectPicker": {
       "back": "戻る",
@@ -7050,6 +7071,7 @@
       "effort": "エフォート",
       "effort_help": "推論エフォートは、モデルが回答前に考える時間を設定します。高いほど難しい問題を長く推論するため遅くなりますが、回答品質が向上します。低いほど高速です。セッションごとの上書きをオフにすると、設定 → チャットのデフォルトへフォールバックします。デフォルトがなければモデル自身の選択を使用します（Fable/Opus/Sonnet のみ）。",
       "faster": "高速",
+      "configured_default_marker": "設定済みのデフォルト",
       "reasoning_effort": "推論エフォート",
       "smarter": "スマート",
       "use_configured_default": "設定されたデフォルトを使用",
@@ -7180,6 +7202,10 @@
       "selected": "選択済み",
       "showing": "表示中",
       "you": "あなた"
+    },
+    "multiSelect": {
+      "deselect_all": "すべてを選択解除",
+      "select_all": "すべてを選択"
     },
     "searchableSelect": {
       "no_matches": "マッチするものがありません",
@@ -8171,11 +8197,11 @@
       "pull_request_url": "プルリクエストの URL",
       "pull_request_url_placeholder": "例: https://github.com/org/repo/pull/123…",
       "request_failed": "モニターのリクエストに失敗しました。もう一度お試しください。",
-      "session_mode_unavailable": "クルーまたはメンバーのセッションでは、作業がクルー経由で振り分けられるため、モニターを利用できません。",
+      "session_mode_unavailable": "クルーセッションとメンバーセッションでは自動化を利用できません。これらのセッションは作業をクルー経由で処理するためです。",
       "restart_monitor": "モニターを再起動",
       "review_ready": "レビュー準備完了",
       "save_changes": "変更を保存",
-      "set_up_bounded_monitor": "上限付きモニターを設定",
+      "set_up_bounded_monitor": "代わりにプルリクエストを監視",
       "sidebar_status": "モニター · {{status}}",
       "start_monitor": "モニターを開始",
       "statuses": {
@@ -8194,9 +8220,8 @@
       "title": "上限付きプルリクエストモニター",
       "tokens": "トークン：{{count}}",
       "unknown": "不明",
-      "back_to_bounded_monitor": "制限付きモニターに戻る",
-      "legacy_notice": "この従来のループはサイクルごとにエージェントを呼び出し、制限なく実行される場合があります。",
-      "use_legacy_costly": "従来の目標ループを使用（高コスト）",
+      "legacy_notice": "この目標ループはサイクルごとにエージェントを呼び出し、制限なく実行される場合があります。",
+      "use_legacy_costly": "目標ループに戻る",
       "wake_instructions": "起動時のエージェントへの指示",
       "wake_instructions_too_long": "{{max}} 文字以内で入力してください。",
       "wakes": "起動回数：{{count}}",
@@ -10090,7 +10115,19 @@
       "board_update_failed": "ボードの更新に失敗しました",
       "open_crew_members": "クルーメンバー",
       "open_crew_members_desc": "クルーメンバーのページを開きます。各メンバーは常駐エージェントで、自分のスレッドを持ちます。",
-      "open_crew_members_gated_desc": "まず設定を開いてこのプレビューをオンにします。オンにするまでページは使えません。"
+      "open_crew_members_gated_desc": "まず設定を開いてこのプレビューをオンにします。オンにするまでページは使えません。",
+      "remote_sessions_not_shown_in_board_view_other": "ボード列はローカルセッションのみを管理するため、リモートセッション {{count}} 件はボードビューに表示されません。",
+      "sessions_from_instance_unavailable": "{{names}} のセッションは現在利用できません。",
+      "checking_remote_instances": "リモートインスタンスを確認しています…",
+      "adopt_failed": "このセッションをここで開けませんでした。",
+      "adopt_remote_bind_failed": "{{name}} に接続できず、このセッションを開けませんでした。",
+      "adopt_target_unknown": "このセッションは {{name}} では開かれていません。",
+      "not_open_here_yet": "{{name}} 上 — クリックするとここで開きます",
+      "on_instance": "{{name}} 上",
+      "opening_session_locally": "このセッションをここで開いています…",
+      "opens_here_runs_on_instance": "このセッションをここで開きます — 実行は {{name}} で続きます",
+      "opens_on_crew_switches_there": "{{name}} で開きます — その Crew に切り替わり、ここでは開きません",
+      "remote_instances_list_unavailable": "リモートインスタンスを一覧取得できなかったため、それらのセッションは表示されません。"
     },
     "connectionsPage": {
       "action_failed": "操作に失敗しました: {{error}}",
@@ -10471,6 +10508,8 @@
         "inbound_webhook_tokens_registered_contexts_and_r": "受信 Webhook のトークン、登録済みコンテキスト、実行履歴。API は動作しますが、ページは未完成です。",
         "open_webhooks": "Webhooks を開く",
         "webhooks": "Webhooks",
+        "remote_instance_sessions": "リモートインスタンスのセッション",
+        "merge_a_connected_remote_instances_live_sessions": "接続済みのリモートインスタンスのライブセッションをセッション一覧に統合し、それぞれにサーバーバッジを表示します。動作しますが、まだ未完成です。",
         "intro": {
           "webhooks_summary": "別のシステム（CI、レビューボット、デプロイパイプライン）が、Webhooks ページで作成したアクセストークン付きでメッセージを送るだけで、あなたの代わりにエージェントを動かせます。",
           "webhooks_where": "オンにすると、設定のこのカードに「Webhooks を開く」リンクが現れ、新しい Webhooks ページはそこから開きます。ページが完成するまでサイドバーには表示されません。オフにしてもページが再び隠れるだけで、作成したトークンは残ります。",
@@ -11764,6 +11803,7 @@
         "no_matching_entries": "一致するエントリなし",
         "no_semantic_entries": "意味的エントリなし",
         "of": "の",
+        "open_embedding_model_settings": "埋め込みモデルの設定を開く",
         "preview": "プレビュー",
         "preview_what_gets_injected_into_prompts_enter_a": "プロンプトに注入される内容をプレビューします。クエリを入力してエピソード的検索結果を確認します。",
         "ready": "準備完了！",
@@ -12700,6 +12740,13 @@
         "default_auto": "デフォルト（自動）",
         "default_defers_to_your_agent_config_and_then_to": "独自の設定済みモデルがあるエージェントは、この設定を無視します。「デフォルト」は、エージェント設定のモデルを使用し、未設定の場合はシステムデフォルトを使用します。変更しても、すでに開いているセッションには影響しません。",
         "default_model": "デフォルトモデル",
+        "auto_always_visible": "チャットのモデル選択では常に表示",
+        "failed_to_save_selectable_models": "選択可能なモデルを保存できませんでした",
+        "model_picker_all_models": "すべてのモデル（{{count}}）",
+        "model_picker_selected_models": "{{selected}} / {{total}} を選択",
+        "search_models": "モデルを検索…",
+        "selectable_models": "選択可能なモデル",
+        "selectable_models_description": "チャットのモデル選択に表示する提供モデルを選びます。Auto とアクティブなセッションのモデルは常に表示されます。",
         "default_normal_length": "標準 — 通常の長さ",
         "default_reasoning_effort": "デフォルト推論努力度",
         "default_to_autopilot_mode": "オートパイロットモードをデフォルトに",
@@ -14524,6 +14571,10 @@
       "plainDiff": {
         "description": "差分を構文ハイライトなしのプレーンな unified diff テキストとして表示します。大きな差分でのメモリ使用量が減ります。",
         "label": "プレーン diff"
+      },
+      "diffLayout": {
+        "description": "旧コードと新コードを 2 列で表示します。オフのときは 1 列の統合表示になります。ここでも任意の差分でも変更すると、どこにでも適用されます。",
+        "label": "分割（左右並べ）差分"
       }
     },
     "display": {
@@ -14661,6 +14712,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "クリックしたセッションは削除されたため開けません。",
+      "session_open_error_named": "「{{name}}」を開けませんでした。",
+      "session_open_error": "セッションを開けませんでした。",
+      "session_gone_open_failed_named": "「{{name}}」は削除されたため開けません。",
       "truncated": "…(省略)"
     }
   },
