@@ -1177,10 +1177,14 @@ async def test_every_step_gets_a_utf8_pin_in_its_environment():
     src = Path(sync_runner.__file__).read_text(encoding="utf-8")
     run_step_body = src.split("def run_step(", 1)[1].split("\ndef ", 1)[0]
     assert 'env["PYTHONIOENCODING"] = "utf-8:replace"' in run_step_body
-    # Applied to the env actually handed to subprocess.run, not a stale copy.
-    assert "cwd=cwd, env=env" in run_step_body
+    # Applied to the env actually handed to the spawn, not a stale copy. Matched
+    # on the keyword alone, not on a formatted argument run: the spawn became a
+    # multi-line Popen when stderr got its own pipe, and a substring spanning two
+    # arguments made this fail on a formatting change rather than on a defect.
+    assert "env=env," in run_step_body
+    assert "cwd=cwd," in run_step_body
     # Set before the step is spawned, not after.
-    assert run_step_body.index("PYTHONIOENCODING") < run_step_body.index("subprocess.run(")
+    assert run_step_body.index("PYTHONIOENCODING") < run_step_body.index("subprocess.Popen(")
 
 
 @pytest.mark.asyncio
@@ -4873,10 +4877,11 @@ def _stage_a_cutover(monkeypatch, tmp_path):
 async def test_cutover_unwind_runs_off_the_event_loop(monkeypatch, tmp_path):
     """The rollback must not block the loop.
 
-    restore() ends in restrict_to_owner, which shells out to icacls on Windows,
-    and svc.rollback() rewrites the service definition. Run inline, an unwind
-    would stall every other gateway request for the duration of a subprocess, so
-    it has to reach the executor like the write it is undoing.
+    restore() ends in restrict_to_owner, whose Windows DACL write can block on
+    a network volume round-trip, and svc.rollback() rewrites the service
+    definition. Run inline, an unwind would stall every other gateway request
+    for the duration of that blocking file IO, so it has to reach the executor
+    like the write it is undoing.
     """
     wt = _mk_make_live_wt(tmp_path, venv=True, dist=True)
     ptr_dir = tmp_path / "ptr"

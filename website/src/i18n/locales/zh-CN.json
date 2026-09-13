@@ -2791,6 +2791,8 @@
         "cancel": "取消",
         "chatEmpty": "还没有向 {{name}} 发送任何内容。",
         "diagramFrameTitle": "{{name}} 的图示",
+        "discardDraft": "放弃未保存的更改",
+        "discardDraftHint": "未保存的更改将被永久删除。",
         "edit": "编辑此输出",
         "edited": "已编辑",
         "editorLabel": "{{name}} 的输出，可编辑",
@@ -2799,8 +2801,9 @@
         "mute": "静音 {{name}}",
         "mutedHint": "未在聆听会议",
         "revert": "放弃我的修改",
-        "revertHint": "放弃我的修改，显示 {{name}} 写的内容",
+        "revertHint": "永久删除我的修改，显示 {{name}} 写的内容",
         "save": "保存",
+        "saving": "保存中…",
         "send": "发送",
         "showChat": "显示对话",
         "showOutput": "显示输出",
@@ -2809,7 +2812,10 @@
       },
       "broadcastBar": {
         "heard": "听到：{{text}}",
+        "pausedPlaceholder": "助手已暂停 — 继续后才能发送",
+        "pausingPlaceholder": "正在暂停 — 暂时无法发送",
         "placeholder": "对所有正在聆听的代理说点什么……",
+        "resumingPlaceholder": "正在继续 — 马上就能发送",
         "send": "发送"
       },
       "list": {
@@ -2859,6 +2865,7 @@
         "back": "返回",
         "endAndReview": "结束并复核",
         "ended": "已结束",
+        "endingReview": "正在结束 — 准备审阅…",
         "live": "进行中",
         "loadFailed": "无法打开这场会议",
         "moreActions": "更多操作",
@@ -2866,8 +2873,10 @@
         "noAgentsHint": "在上方栏中启用一个，或选择一个预设。",
         "pause": "暂停",
         "paused": "已暂停",
+        "pausing": "正在暂停…",
         "refresh": "刷新",
         "restart": "重新开始",
+        "resuming": "正在继续…",
         "retryAgents": "重试",
         "start": "开始",
         "toggleTasks": "行动项",
@@ -2996,6 +3005,7 @@
       "transcript": {
         "empty": "暂无转录",
         "emptyHintLive": "随着会议进行，最终确认的语音内容会显示在这里。",
+        "emptyHintPaused": "已暂停 — 继续后语音将显示在这里。",
         "emptyHintRecorded": "这场会议没有记录转录。",
         "full": "转录已满。新的语音和广播将不再被记录或发送给代理。",
         "jumpToLatest": "跳到最新内容",
@@ -4309,7 +4319,7 @@
         "creating": "正在创建",
         "directly_under_the_root": "直接位于根目录下",
         "inside_name": "位于 {{name}} 内",
-        "n_already_existed": "{{n}} 个已存在",
+        "n_already_set_up": "{{n}} 个已设置",
         "n_created": "已创建 {{n}} 个",
         "n_failed": "{{n}} 个失败",
         "n_possible_sub_folders_inside_packages_above": "上方软件包内有 {{n}} 个可能的子文件夹",
@@ -4323,6 +4333,7 @@
         "project_directory": "项目目录",
         "re_scan": "重新扫描",
         "results": "结果",
+        "root_already_exists_nothing_to_create": "该目录已有对应的侧边栏文件夹，没有可创建的内容。",
         "root_changed_scan_before_creating": "上方目录已更改 — 创建文件夹前请先扫描。",
         "scan": "扫描",
         "scan_a_project_directory_then_create_a_sidebar": "扫描一个项目目录，然后为你选择的每个子项目创建一个侧边栏文件夹。",
@@ -6641,6 +6652,10 @@
       "click_to_browse_shift_click_to_copy_path": "点击浏览 / Shift+点击复制路径",
       "click_to_open_shift_click_to_copy_path": "点击打开 / Shift+点击复制路径",
       "copy_diagram_source": "复制图表源代码",
+      "copy_table_csv": "以 CSV 格式复制表格",
+      "copy_table_markdown": "以 Markdown 格式复制表格",
+      "format_csv": "复制 CSV",
+      "format_markdown": "复制 Markdown",
       "diagram_source": "图表源代码",
       "copy_failed": "复制失败",
       "mermaid_render_failed": "无法渲染此图表。改为显示源代码。",
@@ -6748,12 +6763,12 @@
       "no_matches": "无匹配项"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "设置中管理",
+      "manage_visible_models": "管理显示的模型",
       "default_for_agent": "<agent/> 的默认模型",
       "filter_models": "筛选模型",
       "model_list": "模型列表",
-      "models": "模型",
       "pin_model_unavailable": "<model/> 目前未提供",
-      "reasoning": "推理",
       "set_default_for_agent": "将 <model/> 设为 <agent/> 的默认模型",
       "set_default_for_new_sessions": "新会话的全局默认…",
       "type_to_filter": "输入以筛选…"
@@ -6878,6 +6893,12 @@
       "eyebrow": "隐私",
       "subtitle": "{{productName}} 发送的五个匿名字段，以及如何关闭。",
       "title": "隐私"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "正在重新启动高亮显示。仍可继续编辑。",
+      "highlighting_starting_editing_available": "正在启动语法高亮。仍可继续编辑。",
+      "highlighting_unavailable_content_readable_reload": "重新加载前语法高亮不可用。内容仍可阅读。",
+      "highlighting_unavailable_reload": "语法高亮不可用。请保存或复制草稿，然后重新加载以恢复语法高亮；仍可继续编辑。"
     },
     "projectPicker": {
       "back": "返回",
@@ -7050,6 +7071,7 @@
       "effort": "强度",
       "effort_help": "推理强度决定模型在回答前思考多久。强度越高，用于思考难题的时间越长（更慢，但答案更好）；越低则越快。关闭会话级覆盖后，会回退到“设置 → 聊天”中的默认值，或在未设置默认值时交由模型自行决定（仅 Fable/Opus/Sonnet）。",
       "faster": "更快",
+      "configured_default_marker": "已配置默认值",
       "reasoning_effort": "推理强度",
       "smarter": "更聪明",
       "use_configured_default": "使用已配置的默认值",
@@ -7180,6 +7202,10 @@
       "selected": "已选中",
       "showing": "正在显示",
       "you": "你"
+    },
+    "multiSelect": {
+      "deselect_all": "取消全选",
+      "select_all": "全选"
     },
     "searchableSelect": {
       "no_matches": "无匹配项",
@@ -8171,11 +8197,11 @@
       "pull_request_url": "拉取请求 URL",
       "pull_request_url_placeholder": "例如 https://github.com/org/repo/pull/123…",
       "request_failed": "监控请求失败，请重试。",
-      "session_mode_unavailable": "群组或成员会话不支持监控，因为这些会话通过其群组路由工作。",
+      "session_mode_unavailable": "群组会话和成员会话不支持自动化，因为这些会话的工作会通过其群组转发。",
       "restart_monitor": "重启监控",
       "review_ready": "可供评审",
       "save_changes": "保存更改",
-      "set_up_bounded_monitor": "设置有界监控",
+      "set_up_bounded_monitor": "改为监控拉取请求",
       "sidebar_status": "监控 · {{status}}",
       "start_monitor": "启动监控",
       "statuses": {
@@ -8194,9 +8220,8 @@
       "title": "有界拉取请求监控",
       "tokens": "令牌数：{{count}}",
       "unknown": "未知",
-      "back_to_bounded_monitor": "返回有界监控",
-      "legacy_notice": "此旧版循环会在每个周期调用代理，并且可能无限期运行。",
-      "use_legacy_costly": "使用旧版目标循环（成本高）",
+      "legacy_notice": "此目标循环会在每个周期调用代理，并且可能无限期运行。",
+      "use_legacy_costly": "返回目标循环",
       "wake_instructions": "代理唤醒时的指令",
       "wake_instructions_too_long": "请输入不超过 {{max}} 个字符。",
       "wakes": "唤醒次数：{{count}}",
@@ -10090,7 +10115,19 @@
       "board_update_failed": "看板更新失败",
       "open_crew_members": "团队成员",
       "open_crew_members_desc": "打开团队成员页面——每个成员都是一个常驻代理，各有自己的话题。",
-      "open_crew_members_gated_desc": "会先打开设置以开启此预览——开启之前该页面不可用。"
+      "open_crew_members_gated_desc": "会先打开设置以开启此预览——开启之前该页面不可用。",
+      "remote_sessions_not_shown_in_board_view_other": "看板列仅管理本地会话，因此 {{count}} 个远程会话不会显示在看板视图中。",
+      "sessions_from_instance_unavailable": "{{names}} 的会话当前不可用。",
+      "checking_remote_instances": "正在检查远程实例…",
+      "adopt_failed": "无法在此处打开该会话。",
+      "adopt_remote_bind_failed": "无法连接 {{name}}，因此无法打开该会话。",
+      "adopt_target_unknown": "该会话在 {{name}} 上已不再打开。",
+      "not_open_here_yet": "在 {{name}} 上 —— 点击可在此处打开",
+      "on_instance": "在 {{name}} 上",
+      "opening_session_locally": "正在此处打开该会话…",
+      "opens_here_runs_on_instance": "在此处打开该会话——它的执行仍在 {{name}} 上进行",
+      "opens_on_crew_switches_there": "在 {{name}} 上打开 —— 切换到该 Crew，而不是在此处",
+      "remote_instances_list_unavailable": "无法列出远程实例，因此不显示其会话。"
     },
     "connectionsPage": {
       "action_failed": "操作失败：{{error}}",
@@ -10471,6 +10508,8 @@
         "inbound_webhook_tokens_registered_contexts_and_r": "入站 Webhook 令牌、已注册的上下文和运行历史。API 可用，但页面尚未完成。",
         "open_webhooks": "打开 Webhook",
         "webhooks": "Webhook",
+        "remote_instance_sessions": "远程实例会话",
+        "merge_a_connected_remote_instances_live_sessions": "将已连接远程实例的实时会话合并到会话列表中，每个会话都带有服务器标记。功能可用，但尚未完成。",
         "intro": {
           "webhooks_summary": "让另一个系统替你启动代理——CI、评审机器人、部署流水线——只需用你在 Webhooks 页面创建的访问令牌发送一条消息。",
           "webhooks_where": "开启后，这张卡片在“设置”里会出现“打开 Webhooks”链接，新的 Webhooks 页面从那里进入；页面完成之前不会出现在侧边栏里。关闭后只是重新隐藏这个页面；你创建的 token 会保留。",
@@ -11764,6 +11803,7 @@
         "no_matching_entries": "无匹配记录",
         "no_semantic_entries": "无语义记录",
         "of": "/",
+        "open_embedding_model_settings": "打开嵌入模型设置",
         "preview": "预览",
         "preview_what_gets_injected_into_prompts_enter_a": "预览会注入提示词的内容。输入查询即可查看情景检索结果。",
         "ready": "就绪！",
@@ -12700,6 +12740,13 @@
         "default_auto": "默认（自动）",
         "default_defers_to_your_agent_config_and_then_to": "配置了自己模型的代理会忽略此设置。“默认”使用代理配置中的模型；若未配置，则使用系统默认模型。更改此设置不会影响已打开的会话。",
         "default_model": "默认模型",
+        "auto_always_visible": "在聊天模型选择器中始终显示",
+        "failed_to_save_selectable_models": "保存可选模型失败",
+        "model_picker_all_models": "全部模型（{{count}}）",
+        "model_picker_selected_models": "已选择 {{selected}} / {{total}}",
+        "search_models": "搜索模型…",
+        "selectable_models": "可选模型",
+        "selectable_models_description": "选择哪些已提供的模型显示在聊天模型选择器中。Auto 和当前会话正在使用的模型始终保留显示。",
         "default_normal_length": "默认 — 正常长度",
         "default_reasoning_effort": "默认推理强度",
         "default_to_autopilot_mode": "默认使用自动驾驶模式",
@@ -14524,6 +14571,10 @@
       "plainDiff": {
         "description": "以普通 unified diff 文本显示差异，不使用语法高亮着色。在大型差异上占用更少内存。",
         "label": "纯文本 diff"
+      },
+      "diffLayout": {
+        "description": "分两栏显示旧代码和新代码；关闭则显示单栏统一视图。在这里或在任意差异上更改，都会应用到各处。",
+        "label": "拆分（并排）差异"
       }
     },
     "display": {
@@ -14661,6 +14712,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "你点击的会话已被删除，无法打开。",
+      "session_open_error_named": "无法打开“{{name}}”。",
+      "session_open_error": "无法打开该会话。",
+      "session_gone_open_failed_named": "“{{name}}”已被删除，无法打开。",
       "truncated": "…（已截断）"
     }
   },

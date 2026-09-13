@@ -6,6 +6,7 @@ import AppIcon from './AppIcon'
 import CopyBranchButton from './CopyBranchButton'
 import RejectDropdown from './RejectDropdown'
 import { usePointerDrag } from '../hooks/usePointerDrag'
+import { useAnchorRemeasure } from '../hooks/useAnchorRemeasure'
 import { useScrollEdges } from '../hooks/useScrollEdges'
 import VoiceStatusBar from './VoiceStatusBar'
 import VoiceDictationPanel, { useDictationPanelUsable } from './VoiceDictationPanel'
@@ -1493,8 +1494,14 @@ function ChatInput({
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [plusOpen])
+  const measurePlus = useCallback(() => {
+    if (plusBtnRef.current) setPlusRect(plusBtnRef.current.getBoundingClientRect())
+  }, [])
+  // Keeps the portaled "+" menu anchored while the trigger moves under it --
+  // notably when the mobile keyboard closes (visualViewport-only signal).
+  useAnchorRemeasure(plusOpen, measurePlus)
   const togglePlus = () => {
-    if (!plusOpen && plusBtnRef.current) setPlusRect(plusBtnRef.current.getBoundingClientRect())
+    if (!plusOpen) measurePlus()
     setPlusOpen(o => !o)
   }
   // Client-side `accept` is a UX hint only (input-validation guidance: server enforces type via
@@ -3154,7 +3161,7 @@ function ChatInput({
   // The name in the status row is the way there: one click switches to the
   // chat that holds the mic, where the user can end the capture.
   const micHeldElsewhereAction = micOwnerTitle && voiceBusyElsewhereSession
-    ? { label: micOwnerTitle, onClick: () => { void dispatch(switchSlot(voiceBusyElsewhereSession)) } }
+    ? { label: micOwnerTitle, onClick: () => { void dispatch(switchSlot({ key: voiceBusyElsewhereSession, announceOnMissing: true })) } }
     : undefined
   /** State, not a ref: the hold target mounts only once hold mode is on, and the
    *  gesture hook can only bind its listeners when that arrival is observable.

@@ -24,7 +24,6 @@ import logging
 import os
 import re
 import shutil
-import signal
 import stat
 import subprocess as subprocess_mod
 import sys
@@ -319,6 +318,29 @@ _OPENCODE_CONFIG_READBACK_ARGS = ("debug", "config")
 # Bounded so a wedged harness cannot hold the spawn open: the read-back is a
 # short-lived child, measured at ~2.3s on a loaded dev desktop.
 _OPENCODE_READBACK_TIMEOUT_S = 30.0
+
+# Launchers that carry the adapter's entry script as their next argument.  A
+# label taken from argv[0] alone would read "node" for every adapter resolved
+# to a script rather than a native binary.
+_ADAPTER_INTERPRETERS = frozenset({"node", "node.exe"})
+
+
+def _adapter_spawn_label(argv: Sequence[str], seam: str) -> str:
+    """Keep a stable seam label while identifying the resolved program.
+
+    Both ACP seams resolve their binary through a documented environment
+    override (``CLAUDE_AGENT_ACP_BIN``, ``CODEX_ACP_BIN``), and either may point
+    at a dispatch shim or a vendored build that is not the seam's own adapter.
+    The seam is useful to existing log parsers, while the resolved program proves
+    which adapter command that seam actually launched.
+    """
+    if not argv:
+        return seam
+    program = argv[0]
+    if Path(program).name.casefold() in _ADAPTER_INTERPRETERS and len(argv) > 1:
+        program = argv[1]
+    return f"{seam} via {program}" if program else seam
+
 
 # High-frequency, content-free adapter stderr diagnostics that _drain_stderr()
 # drops instead of forwarding as per-line WARNINGs.  The driving case is the
@@ -871,6 +893,24 @@ def _resolve_codex_acp_bin() -> tuple[list[str] | None, str]:
             return [node_on_path, resolved], search_path
 
     return None, search_path
+
+
+def codex_acp_not_found_message(search_path: str) -> str:
+    """The one wording for "the codex adapter is not installed".
+
+    Both transports that spawn codex-acp raise it, so it is authored once: two
+    copies drift, and this text is the operator's only instruction for fixing the
+    install. *search_path* is what the resolver actually walked -- passed in
+    rather than re-read, so a "searched ..." line can never name a directory the
+    search skipped.
+    """
+    return (
+        f"{CODEX_ACP_BIN} not found "
+        f"({describe_search_path(search_path)}). Install it with "
+        f"'npm i -g {CODEX_ACP_NPM_PKG}' (or add it as a project "
+        f"dependency), or set {_ENV_CODEX_ACP_BIN} to its entry script. "
+        f"The 'codex' CLI alone does not serve ACP."
+    )
 
 
 def _resolve_claude_code_executable() -> str | None:
@@ -3400,14 +3440,15 @@ def _kill_escaped_children(child_pids: dict[int, int | None] | dict[int, ChildRe
     POSIX-only sweep: it cleans up children that reparented out of the killed
     process group (e.g. MCP servers). On Windows there are no process groups —
     ``kill_process_tree`` already used ``taskkill /T`` to walk the whole child
-    tree — so there is nothing left to sweep, and the raw ``os.kill`` /
-    ``signal.SIGKILL`` below are unavailable there. No-op on win32.
+    tree — so there is nothing left to sweep, and the POSIX signal APIs are
+    unavailable there. No-op on win32.
     """
     if platform_compat.IS_WINDOWS:
         return
     for cpid in reversed(list(child_pids.keys())):
         try:
-            os.kill(cpid, 0)  # still alive?
+            if not platform_compat.pid_exists(cpid):
+                continue  # gone — nothing to sweep
             record = child_pids.get(cpid)
             # Support both old (int|None) and new (tuple) record shapes
             if isinstance(record, tuple):
@@ -3420,7 +3461,7 @@ def _kill_escaped_children(child_pids: dict[int, int | None] | dict[int, ChildRe
             ):
                 logger.debug("Skipping PID %d — not our process (recycled?)", cpid)
                 continue
-            os.kill(cpid, signal.SIGKILL)
+            platform_compat.kill_pid(cpid, platform_compat.SIGKILL)
             logger.debug("Killed escaped child PID %d", cpid)
         except (ProcessLookupError, OSError):
             pass
@@ -4273,6 +4314,50 @@ class AcpClient:
             self._session_mcp_servers(), self._agent_mcp_capabilities
         )
 
+    def _opencode_session_mcp_servers(self) -> list:
+        """MCP server array passed to an opencode ``session/new`` / ``session/load``.
+
+        The opencode twin of :meth:`_codex_session_mcp_servers`, and it must stay
+        non-empty for the same reason: ``opencode acp`` reads no
+        ``~/.kiro/agents/<name>.json``, so nothing Crew declares reaches the session
+        through any other door. Until this hook existed an opencode session held
+        none of Crew's own tools at all -- no ``spawn_run``, no ``cron_add``, no
+        ``send_message`` -- while working in every visible respect.
+
+        What it does NOT do is the interesting half. There is no transport filter
+        here, unlike codex: an ``http`` element and an ``sse`` element are both
+        ACCEPTED by ``opencode acp``, so ``drop_unadvertised_transports`` would only
+        remove servers the harness would have mounted. Measured, not assumed --
+        ``test/test_opencode_session_mcp.py::test_real_opencode_acp_accepts_the_crew_stdio_element``
+        drives a real ``opencode acp`` the way its codex sibling drives codex-acp,
+        and pins the ``initialize`` ``mcpCapabilities`` shape so a release that
+        starts refusing the stdio element goes red here rather than silently
+        emptying every session's tool set.
+
+        The failure mode a bad element causes is the OPPOSITE of codex's, which is
+        why the shared translator's skip discipline matters more here, not less: a
+        malformed element (no ``command``, or an ``env`` that is not an array) fails
+        the WHOLE ``session/new`` with ``-32602`` on this harness, where codex drops
+        the element and succeeds. ``acp.session_mcp.acp_server_element`` returns
+        ``None`` for an entry with neither ``command`` nor ``url`` and stringifies
+        what it cannot type, so one hand-edited spec line costs that server rather
+        than the session.
+
+        The translation lives in the mirror
+        (:mod:`kiro_crew.providers.mirrors.opencode`), not here, for the same reason
+        claude's and codex's do: projecting the agent spec onto a backend's native
+        shape is one named contract with one implementation per backend.
+
+        The seam is deliberately KEPT rather than replaced by a capability-set
+        call: an edition may override this method, and swapping the call site for a
+        set membership test would silently stop calling that override.
+
+        In-memory only. The spawn path warms ``_session_mcp_cache`` off the loop, so
+        this accessor adds no scheduling or failure point to a call site shared with
+        kiro-cli (harness-parity H13).
+        """
+        return self._session_mcp_servers()
+
     def _claude_local_settings_path(self) -> Path:
         return self._work_dir / ".claude" / "settings.local.json"
 
@@ -5106,10 +5191,15 @@ class AcpClient:
         Also records ``currentModelId`` for ``_track_metadata``'s context
         window lookup.
         """
+        # Imported lazily: acp.session_handle imports this module at module
+        # level, so a top-level import here would be a cycle.
+        from kiro_crew.acp.session_handle import models_from_config_options
+
         models = session_resp.get("models")
         if not isinstance(models, dict):
-            # Adapters that omit `models` still advertise via configOptions.
-            models = self._models_from_config_options(session_resp)
+            # Adapters that omit `models` still advertise via configOptions. One
+            # authoring, shared with the shared-runtime driver's own capture.
+            models = models_from_config_options(session_resp, self.backend)
             if models is None:
                 return
         current_model_id = models.get("currentModelId")
@@ -5144,33 +5234,6 @@ class AcpClient:
                 self._advertised_models_changed = model_registry.refresh_advertised_models(
                     self._model_registry_namespace, self._advertised_model_ids()
                 )
-
-    def _models_from_config_options(self, session_resp: dict) -> dict | None:
-        """Synthesize a ``models`` envelope from a configOptions model select, or None."""
-        if not self._uses_advertised_model_selection:
-            return None
-        for opt in session_resp.get("configOptions") or []:
-            if isinstance(opt, dict) and opt.get("id") == "model" and opt.get("type") == "select":
-                options = [
-                    o for o in opt.get("options") or [] if isinstance(o, dict) and o.get("value")
-                ]
-                if not options:
-                    return None
-                envelope: dict = {
-                    "availableModels": [
-                        {
-                            "modelId": o["value"],
-                            "name": o.get("name") or o["value"],
-                            "description": o.get("description") or "",
-                        }
-                        for o in options
-                    ]
-                }
-                current = opt.get("currentValue")
-                if isinstance(current, str) and current:
-                    envelope["currentModelId"] = current
-                return envelope
-        return None
 
     async def _persist_advertised_models_if_changed(self) -> None:
         """Offload a disk persist of the provider-model cache when it changed.
@@ -5817,6 +5880,8 @@ class AcpClient:
                     f"dependency), or set CLAUDE_AGENT_ACP_BIN to its entry script."
                 )
             argv: list[str] = claude_argv
+            spawn_label = _adapter_spawn_label(argv, CLAUDE_ACP_BIN)
+            stderr_label = _adapter_spawn_label(argv, "claude-acp")
         elif self._is_codex:
             # Selectable on a public build (BASELINE_SELECTABLE_BACKENDS), so this
             # branch runs for real users; what is unwritten is the session MCP array
@@ -5835,13 +5900,7 @@ class AcpClient:
                 else (None, "")
             )
             if not isinstance(codex_argv, list) or not codex_argv:
-                raise AcpError(
-                    f"{CODEX_ACP_BIN} not found "
-                    f"({describe_search_path(codex_search_path)}). Install it with "
-                    f"'npm i -g {CODEX_ACP_NPM_PKG}' (or add it as a project "
-                    f"dependency), or set {_ENV_CODEX_ACP_BIN} to its entry script. "
-                    f"The 'codex' CLI alone does not serve ACP."
-                )
+                raise AcpError(codex_acp_not_found_message(codex_search_path))
             argv = codex_argv
             # Translate the agent spec into this session's MCP array HERE, on
             # codex's own arm, for exactly the reason the claude arm above does it
@@ -5855,6 +5914,8 @@ class AcpClient:
             # warm: _session_mcp_servers resolves a cold cache itself; the warm is
             # what keeps the read off the loop.
             self._session_mcp_cache = await asyncio.to_thread(self._resolve_session_mcp_servers)
+            spawn_label = _adapter_spawn_label(argv, CODEX_ACP_BIN)
+            stderr_label = spawn_label
             # Fail closed BEFORE the spawn when the mask below would be dropped:
             # several wrap_argv paths return without applying extra_hidden_dirs,
             # which would start an enforced adapter with no compensating control
@@ -5909,6 +5970,22 @@ class AcpClient:
                     f"itself."
                 )
             argv = [opencode_bin, OPENCODE_ACP_SUBCMD]
+            # Translate the agent spec into this session's MCP array HERE, on
+            # opencode's own arm, for exactly the reason the claude and codex arms
+            # do it on theirs: the translation reads disk, and doing it at the
+            # shared session/new call site would put an executor hop and a new
+            # failure mode on EVERY backend's construction path, kiro-cli included
+            # (harness-parity H13). No ordering constraint of claude's applies --
+            # this harness's array is not conditional on Crew owning a permission
+            # file, because its routing is seeded on OPENCODE_CONFIG_CONTENT and
+            # then read back out of the harness itself below, so a session that
+            # cannot establish the asking posture is refused rather than run.
+            # Correctness does not depend on this warm: _session_mcp_servers
+            # resolves a cold cache itself; the warm is what keeps the read off the
+            # loop.
+            self._session_mcp_cache = await asyncio.to_thread(self._resolve_session_mcp_servers)
+            spawn_label = f"{OPENCODE_BIN} {OPENCODE_ACP_SUBCMD}"
+            stderr_label = OPENCODE_BIN
             # The same refuse-then-mask preflight the codex arm runs, keyed on the
             # same routing question rather than on this harness's identity: it is
             # ENFORCED, so the OS credential mask is the compensating control for the
@@ -6032,6 +6109,8 @@ class AcpClient:
             if overlap:
                 raise AcpError(overlap)
             argv = [kiro_bin, KIRO_CLI_SUBCMD, "--agent", self._agent]
+            spawn_label = f"{KIRO_CLI_BIN} {KIRO_CLI_SUBCMD}"
+            stderr_label = KIRO_CLI_BIN
 
         # OS-level sandbox: wrap the command to hide sensitive paths.
         # strip_python_env keeps the host PYTHONPATH/PYTHONHOME out of kiro-cli's
@@ -6245,19 +6324,7 @@ class AcpClient:
         # readable on every platform, so equality on a fresh random id is the
         # comparison that cannot false-match across spawns.
         self._process_instance = uuid.uuid4().hex[:16]
-        _spawn_label = (
-            CLAUDE_ACP_BIN
-            if self._is_claude
-            else (
-                CODEX_ACP_BIN
-                if self._is_codex
-                else (
-                    f"{OPENCODE_BIN} {OPENCODE_ACP_SUBCMD}"
-                    if self._is_opencode
-                    else f"{KIRO_CLI_BIN} {KIRO_CLI_SUBCMD}"
-                )
-            )
-        )
+        _spawn_label = spawn_label
         # Everything from here to the end of _spawn runs with a LIVE subprocess
         # that nothing has recorded yet, so every step must be guarded. Without
         # this, any exception in the window — finish_suspended_spawn, the
@@ -6333,7 +6400,9 @@ class AcpClient:
                 )
 
             if self._process.stderr:
-                self._stderr_task = asyncio.ensure_future(self._drain_stderr(self._process.stderr))
+                self._stderr_task = asyncio.ensure_future(
+                    self._drain_stderr(self._process.stderr, label=stderr_label)
+                )
         except BaseException:
             logger.error(
                 "Spawn of %s (PID %s) failed after the process was live; killing it so it "
@@ -6352,7 +6421,9 @@ class AcpClient:
                 )
             raise
 
-    async def _drain_stderr(self, stderr: asyncio.StreamReader) -> None:
+    async def _drain_stderr(
+        self, stderr: asyncio.StreamReader, *, label: str = KIRO_CLI_BIN
+    ) -> None:
         # Count of suppressed high-frequency marker lines (see
         # _SUPPRESSED_STDERR_MARKERS) and the monotonic timestamp of the last
         # throttled summary, so a thinking burst is observable in the log
@@ -6385,16 +6456,7 @@ class AcpClient:
             self._stderr_lines.append(text)
             redacted, _ = redact_exfiltration_urls(text)
             redacted, _ = redact_credentials(redacted)
-            _bin_label = (
-                "claude-acp"
-                if self._is_claude
-                else (
-                    CODEX_ACP_BIN
-                    if self._is_codex
-                    else OPENCODE_BIN if self._is_opencode else KIRO_CLI_BIN
-                )
-            )
-            logger.warning("%s stderr: %s", _bin_label, redacted)
+            logger.warning("%s stderr: %s", label, redacted)
         if suppressed:
             # Flush the residual count once the stream closes so the final burst
             # is still accounted for.
@@ -6848,6 +6910,7 @@ class AcpClient:
             "mcpServers": [
                 *(self._claude_session_mcp_servers() if self._is_claude else []),
                 *(self._codex_session_mcp_servers() if self._is_codex else []),
+                *(self._opencode_session_mcp_servers() if self._is_opencode else []),
                 *(await asyncio.to_thread(self._pooled_mcp_servers)),
             ],
         }
@@ -6937,7 +7000,9 @@ class AcpClient:
         self._can_load_session = init_resp.get("agentCapabilities", {}).get("loadSession", False)
         # Which MCP transports this agent will accept in the session array. Only the
         # codex projection consults it (see _codex_session_mcp_servers); every other
-        # backend either reads no array or accepts the shapes Crew already sends.
+        # backend either reads no array or accepts the shapes Crew already sends --
+        # opencode is the measured case of the latter, accepting stdio, http and sse
+        # alike, so its hook applies no filter (see _opencode_session_mcp_servers).
         advertised = (init_resp.get("agentCapabilities") or {}).get("mcpCapabilities")
         self._agent_mcp_capabilities = dict(advertised) if isinstance(advertised, dict) else {}
         self._agent_version = agent_version_from_init(init_resp)
@@ -6985,6 +7050,7 @@ class AcpClient:
                         "mcpServers": [
                             *(self._claude_session_mcp_servers() if self._is_claude else []),
                             *(self._codex_session_mcp_servers() if self._is_codex else []),
+                            *(self._opencode_session_mcp_servers() if self._is_opencode else []),
                             *(await asyncio.to_thread(self._pooled_mcp_servers)),
                         ],
                     }

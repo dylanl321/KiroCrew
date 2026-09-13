@@ -35,6 +35,7 @@ from kiro_crew.llm_helpers import (
     acp_error_is_transient,
     stream_and_collect,
 )
+from kiro_crew.member_memory_auth import private_memory_store_for_session
 from kiro_crew.task_planner import decompose_yaml
 
 from .agent_exec import build_agent_fn
@@ -158,6 +159,37 @@ Author the workflow for this task:
 """
 
 
+async def _memory_admission_error(*session_keys: str) -> Optional[dict[str, Any]]:
+    """Refuse private parents until every workflow worker can retain their binding.
+
+    This is the gateway's protected session resolver, never an agent-template or
+    environment lookup. Check before allocating authors, pools or run records;
+    unreadable identity is a refusal rather than permission to use Global V1.
+    """
+    for session_key in dict.fromkeys(key for key in session_keys if key):
+        try:
+            private_store = await asyncio.to_thread(private_memory_store_for_session, session_key)
+        except Exception:
+            message = "The workflow's memory binding could not be verified. No agents were started."
+            code = "workflow_memory_unavailable"
+        else:
+            if not private_store:
+                continue
+            message = (
+                "Workflows cannot yet retain a member's private memory. "
+                "Run this work in the member's chat instead."
+            )
+            code = "workflow_private_memory_unsupported"
+        return {
+            "ok": False,
+            "error": message,
+            "errors": [message],
+            "code": code,
+            "admission_rejected": True,
+        }
+    return None
+
+
 class WorkflowService:
     """Owns the shared run registry + runner for the gateway process."""
 
@@ -176,6 +208,7 @@ class WorkflowService:
         timeout_secs: Optional[int] = None,
         definition_library: Any = None,
         task_runner: Any = None,
+        _load_persisted: bool = True,
     ) -> None:
         # Durable store: runs are mirrored to disk so they survive gateway
         # restarts. Pass persist=False (or store=None) to keep a purely in-memory
@@ -228,17 +261,49 @@ class WorkflowService:
         self._host_streams: dict[str, EventStream] = {}
         # Rehydrate any persisted runs from a prior process, and continue the
         # run-id sequence past the highest seen so new ids never collide.
-        try:
-            n = self.registry.load_persisted()
-            if n:
-                self._seq = self._max_persisted_seq()
-        except Exception:  # noqa: BLE001
-            pass
+        if _load_persisted:
+            try:
+                n = self.registry.load_persisted()
+                if n:
+                    self._seq = self._max_persisted_seq()
+            except Exception:  # noqa: BLE001
+                pass
+
+    @classmethod
+    async def create(cls, **kwargs: Any) -> WorkflowService:
+        """Build for an async host; publish/attach only after restart I/O settles."""
+        # The unpublished constructor resolves both stores' paths/config. It
+        # creates no asyncio tasks/locks; live.bind only registers a weak setter
+        # under the watcher's thread lock. Hydration stays on the owning loop.
+        construction = asyncio.create_task(asyncio.to_thread(cls, _load_persisted=False, **kwargs))
+        cancelled = False
+        while not construction.done():
+            try:
+                await asyncio.shield(construction)
+            except asyncio.CancelledError:
+                cancelled = True
+            except Exception:
+                # The worker has settled. Preserve caller cancellation if its
+                # constructor subsequently failed while we were draining it.
+                if cancelled:
+                    raise asyncio.CancelledError from None
+                raise
+        if cancelled:
+            construction.exception()  # retrieve any worker failure before discarding it
+            raise asyncio.CancelledError
+        service = construction.result()
+        await service.registry.load_persisted_async()
+        service._seq = service._max_persisted_seq()
+        return service
 
     @property
     def timeout_secs(self) -> int:
         """Effective (clamped) default wall-clock ceiling for runs of this service."""
         return self._timeout_secs
+
+    def _admission_closed(self) -> bool:
+        """Read SessionManager's shared gate without yielding."""
+        return getattr(self._sessions, "admission_closed", False) is True
 
     def set_timeout_secs(self, value: Optional[int]) -> None:
         """Adopt a new default run ceiling for runs started from now on.
@@ -686,6 +751,9 @@ class WorkflowService:
         ``on_progress(msg)`` streams human-readable authoring progress (each
         attempt, retries) so author-in-run can surface it live in the sidebar/chat.
         """
+        refused = await _memory_admission_error(author)
+        if refused is not None:
+            return refused
 
         def _say(msg: str) -> None:
             if on_progress is not None:
@@ -828,6 +896,11 @@ class WorkflowService:
         """
         if not intent.strip():
             return {"error": "intent is required"}
+        refused = await _memory_admission_error(session_key, author)
+        if refused is not None:
+            return refused
+        if self._admission_closed():
+            return {"error": "gateway admission is closed"}
         run_id = self._new_run_id()
 
         async def _author_fn(
@@ -872,6 +945,11 @@ class WorkflowService:
         vr = validate(source)
         if not vr.ok:
             return {"error": "; ".join(vr.errors), "errors": vr.errors}
+        refused = await _memory_admission_error(session_key, author)
+        if refused is not None:
+            return refused
+        if self._admission_closed():
+            return {"error": "gateway admission is closed"}
         run_id = self._new_run_id()
         await self._runner(run_id, timeout_secs=timeout_secs).run_background(
             source,
@@ -1090,6 +1168,9 @@ class WorkflowService:
         timeout_secs: Optional[int] = None,
     ) -> dict[str, Any]:
         """Run the exact current revision of a named saved workflow."""
+        refused = await _memory_admission_error(session_key, author)
+        if refused is not None:
+            return refused
         definition = await asyncio.to_thread(self.get_definition, workflow_ref)
         if definition is None:
             return {"error": f"no such saved workflow: {workflow_ref}", "not_found": True}
@@ -1115,8 +1196,6 @@ class WorkflowService:
                         "revision": definition["revision"],
                     }
                 )
-            elif "error" in started:
-                started["admission_rejected"] = True
             return started
         if input_text:
             run_args["input"] = input_text
@@ -1178,6 +1257,9 @@ class WorkflowService:
         prior = self.registry.get(run_id)
         if prior is None:
             return {"error": f"no such run: {run_id}"}
+        refused = await _memory_admission_error(prior.session_key, prior.author)
+        if refused is not None:
+            return refused
         stripped = (source or "").strip()
         edited = bool(stripped and stripped != (prior.source or "").strip())
         run_source = source if stripped else prior.source
@@ -1187,6 +1269,8 @@ class WorkflowService:
             vr = validate(run_source)
             if not vr.ok:
                 return {"error": "; ".join(vr.errors), "errors": vr.errors}
+        if self._admission_closed():
+            return {"error": "gateway admission is closed"}
         new_id = self._new_run_id()
         # An edited script can't safely replay the old prefix (call indices shift),
         # so force a fresh run; an unedited rerun keeps the replay cache.

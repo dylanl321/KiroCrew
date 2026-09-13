@@ -2847,6 +2847,8 @@
         "cancel": "रद्द करें",
         "chatEmpty": "{{name}} को अभी कुछ नहीं भेजा गया।",
         "diagramFrameTitle": "{{name}} का आरेख",
+        "discardDraft": "बिना सहेजे बदलाव छोड़ें",
+        "discardDraftHint": "बिना सहेजे बदलाव स्थायी रूप से हटा दिए जाएँगे।",
         "edit": "यह आउटपुट संपादित करें",
         "edited": "संपादित",
         "editorLabel": "{{name}} का आउटपुट, संपादन योग्य",
@@ -2855,8 +2857,9 @@
         "mute": "{{name}} को म्यूट करें",
         "mutedHint": "मीटिंग नहीं सुन रहा है",
         "revert": "मेरे बदलाव छोड़ दें",
-        "revertHint": "मेरे बदलाव छोड़कर वह दिखाएँ जो {{name}} ने लिखा",
+        "revertHint": "मेरे बदलाव स्थायी रूप से हटाकर वह दिखाएँ जो {{name}} ने लिखा",
         "save": "सहेजें",
+        "saving": "सहेजा जा रहा है…",
         "send": "भेजें",
         "showChat": "चैट दिखाएँ",
         "showOutput": "आउटपुट दिखाएँ",
@@ -2865,7 +2868,10 @@
       },
       "broadcastBar": {
         "heard": "सुना गया: {{text}}",
+        "pausedPlaceholder": "एजेंट रुके हैं — भेजने के लिए फिर से शुरू करें",
+        "pausingPlaceholder": "रोका जा रहा है — भेजना उपलब्ध नहीं",
         "placeholder": "सुन रहे सभी एजेंटों से कुछ कहें…",
+        "resumingPlaceholder": "फिर से शुरू हो रहा है — जल्द ही भेज सकेंगे",
         "send": "भेजें"
       },
       "list": {
@@ -2916,6 +2922,7 @@
         "back": "वापस",
         "endAndReview": "समाप्त करें और समीक्षा करें",
         "ended": "समाप्त",
+        "endingReview": "समाप्त हो रहा है — समीक्षा तैयार हो रही है…",
         "live": "चल रही",
         "loadFailed": "यह मीटिंग खुल नहीं सकी",
         "moreActions": "और कार्रवाइयां",
@@ -2923,8 +2930,10 @@
         "noAgentsHint": "ऊपर की पट्टी से किसी को चालू करें, या कोई प्रीसेट चुनें।",
         "pause": "रोकें",
         "paused": "रुकी हुई",
+        "pausing": "रोका जा रहा है…",
         "refresh": "ताज़ा करें",
         "restart": "फिर से शुरू करें",
+        "resuming": "जारी रखा जा रहा है…",
         "retryAgents": "पुनः प्रयास करें",
         "start": "शुरू करें",
         "toggleTasks": "कार्य-बिंदु",
@@ -3056,6 +3065,7 @@
       "transcript": {
         "empty": "अभी कोई प्रतिलेख नहीं",
         "emptyHintLive": "मीटिंग आगे बढ़ने पर अंतिम भाषण यहाँ दिखाई देगा।",
+        "emptyHintPaused": "रुका हुआ — फिर से शुरू करने पर बोली यहां दिखेगी।",
         "emptyHintRecorded": "इस मीटिंग के लिए कोई प्रतिलेख रिकॉर्ड नहीं किया गया।",
         "full": "प्रतिलेख भर गया है। नई आवाज़ और प्रसारण अब रिकॉर्ड नहीं होंगे या एजेंटों को नहीं भेजे जाएंगे।",
         "jumpToLatest": "सबसे नए पर जाएँ",
@@ -4385,7 +4395,7 @@
         "creating": "बनाया जा रहा है",
         "directly_under_the_root": "सीधे रूट के नीचे",
         "inside_name": "{{name}} के अंदर",
-        "n_already_existed": "{{n}} पहले से मौजूद थे",
+        "n_already_set_up": "{{n}} पहले से सेट अप",
         "n_created": "{{n}} बनाए गए",
         "n_failed": "{{n}} विफल",
         "n_possible_sub_folders_inside_packages_above": "ऊपर के पैकेज के अंदर {{n}} संभावित सब-फ़ोल्डर",
@@ -4399,6 +4409,7 @@
         "project_directory": "प्रोजेक्ट डायरेक्टरी",
         "re_scan": "फिर स्कैन करें",
         "results": "परिणाम",
+        "root_already_exists_nothing_to_create": "इस डायरेक्टरी का साइडबार फ़ोल्डर पहले से मौजूद है, इसलिए बनाने के लिए कुछ नहीं बचा है।",
         "root_changed_scan_before_creating": "ऊपर की डायरेक्टरी बदल गई है — फ़ोल्डर बनाने से पहले इसे स्कैन करें।",
         "scan": "स्कैन करें",
         "scan_a_project_directory_then_create_a_sidebar": "किसी प्रोजेक्ट डायरेक्टरी को स्कैन करें, फिर तुम्हारे चुने हुए हर सब-प्रोजेक्ट के लिए एक साइडबार फ़ोल्डर बनाएँ।",
@@ -6743,6 +6754,10 @@
       "click_to_browse_shift_click_to_copy_path": "ब्राउज़ करने के लिए क्लिक करें / पथ कॉपी करने के लिए Shift+क्लिक करें",
       "click_to_open_shift_click_to_copy_path": "खोलने के लिए क्लिक करें / पथ कॉपी करने के लिए Shift+क्लिक करें",
       "copy_diagram_source": "आरेख स्रोत कॉपी करें",
+      "copy_table_csv": "तालिका को CSV के रूप में कॉपी करें",
+      "copy_table_markdown": "तालिका को Markdown के रूप में कॉपी करें",
+      "format_csv": "CSV कॉपी करें",
+      "format_markdown": "Markdown कॉपी करें",
       "diagram_source": "आरेख स्रोत",
       "copy_failed": "कॉपी विफल",
       "mermaid_render_failed": "यह आरेख रेंडर नहीं किया जा सका। इसके बजाय स्रोत दिखाया जा रहा है।",
@@ -6850,12 +6865,12 @@
       "no_matches": "कोई मेल नहीं"
     },
     "modelEffortDropdown": {
+      "manage_in_settings": "सेटिंग में प्रबंधित करें",
+      "manage_visible_models": "दिखने वाले मॉडल प्रबंधित करें",
       "default_for_agent": "<agent/> का डिफ़ॉल्ट मॉडल",
       "filter_models": "मॉडल फ़िल्टर करें",
       "model_list": "मॉडल सूची",
-      "models": "मॉडल",
       "pin_model_unavailable": "<model/> अभी पेश नहीं किया जा रहा है",
-      "reasoning": "रीज़निंग",
       "set_default_for_agent": "<model/> को <agent/> का डिफ़ॉल्ट मॉडल बनाओ",
       "set_default_for_new_sessions": "नए सेशन के लिए ग्लोबल डिफ़ॉल्ट…",
       "type_to_filter": "फ़िल्टर करने के लिए टाइप करें…"
@@ -6982,6 +6997,12 @@
       "eyebrow": "गोपनीयता",
       "subtitle": "{{productName}} जो पाँच अनाम फ़ील्ड भेजता है, और उन्हें कैसे बंद करना है।",
       "title": "गोपनीयता"
+    },
+    "pierreEditorImpl": {
+      "highlighting_restarting_editing_available": "हाइलाइटिंग फिर से शुरू हो रही है। संपादन जारी रखा जा सकता है।",
+      "highlighting_starting_editing_available": "सिंटैक्स हाइलाइटिंग शुरू हो रही है। संपादन जारी रखा जा सकता है।",
+      "highlighting_unavailable_content_readable_reload": "पुनः लोड करने तक सिंटैक्स हाइलाइटिंग उपलब्ध नहीं है। सामग्री पढ़ी जा सकती है।",
+      "highlighting_unavailable_reload": "सिंटैक्स हाइलाइटिंग उपलब्ध नहीं है। अपना ड्राफ़्ट सहेजें या कॉपी करें, फिर इसे बहाल करने के लिए पुनः लोड करें; संपादन जारी रखा जा सकता है।"
     },
     "projectPicker": {
       "back": "वापस",
@@ -7160,6 +7181,7 @@
       "effort": "प्रयास",
       "effort_help": "रीज़निंग प्रयास तय करता है कि मॉडल उत्तर देने से पहले कितनी देर सोचेगा। उच्च प्रयास यानी कठिन समस्याओं पर ज़्यादा देर तक सोचना (धीमा, पर बेहतर उत्तर); कम प्रयास तेज़ रहता है। प्रति-सत्र ओवरराइड बंद करने पर सेटिंग्स → चैट में सेट किया गया डिफ़ॉल्ट लागू होता है, या डिफ़ॉल्ट सेट न होने पर मॉडल अपना चुनाव करता है (केवल Fable/Opus/Sonnet)।",
       "faster": "तेज़",
+      "configured_default_marker": "कॉन्फ़िगर किया गया डिफ़ॉल्ट",
       "reasoning_effort": "रीज़निंग प्रयास",
       "smarter": "अधिक स्मार्ट",
       "use_configured_default": "कॉन्फ़िगर किया गया डिफ़ॉल्ट उपयोग करें",
@@ -7290,6 +7312,10 @@
       "selected": "चुने गए",
       "showing": "दिखा रहे हैं",
       "you": "तुम"
+    },
+    "multiSelect": {
+      "deselect_all": "चयन हटाएँ",
+      "select_all": "सभी चुनें"
     },
     "searchableSelect": {
       "no_matches": "कोई मेल नहीं",
@@ -8285,11 +8311,11 @@
       "pull_request_url": "पुल अनुरोध URL",
       "pull_request_url_placeholder": "उदा. https://github.com/org/repo/pull/123…",
       "request_failed": "मॉनिटर अनुरोध विफल रहा। फिर कोशिश करो।",
-      "session_mode_unavailable": "क्रू या सदस्य सत्रों में मॉनिटर उपलब्ध नहीं हैं, क्योंकि इन सत्रों का काम उनके क्रू के माध्यम से भेजा जाता है।",
+      "session_mode_unavailable": "क्रू और सदस्य सत्रों में ऑटोमेशन उपलब्ध नहीं हैं, क्योंकि ये सत्र अपना काम अपने क्रू के माध्यम से भेजते हैं।",
       "restart_monitor": "मॉनिटर फिर शुरू करें",
       "review_ready": "समीक्षा के लिए तैयार",
       "save_changes": "बदलाव सहेजें",
-      "set_up_bounded_monitor": "सीमित मॉनिटर सेट करें",
+      "set_up_bounded_monitor": "इसके बजाय पुल अनुरोध मॉनिटर करें",
       "sidebar_status": "मॉनिटर · {{status}}",
       "start_monitor": "मॉनिटर शुरू करें",
       "statuses": {
@@ -8308,9 +8334,8 @@
       "title": "सीमित पुल अनुरोध मॉनिटर",
       "tokens": "टोकन: {{count}}",
       "unknown": "अज्ञात",
-      "back_to_bounded_monitor": "सीमित मॉनिटर पर वापस जाएँ",
-      "legacy_notice": "यह पुराना लूप हर चक्र में एजेंट को चलाता है और बिना सीमा के चल सकता है।",
-      "use_legacy_costly": "पुराना लक्ष्य लूप इस्तेमाल करें (महँगा)",
+      "legacy_notice": "यह लक्ष्य लूप हर चक्र में एजेंट को चलाता है और बिना सीमा के चल सकता है।",
+      "use_legacy_costly": "लक्ष्य लूप पर वापस जाएँ",
       "wake_instructions": "एजेंट के जागने पर उसके लिए निर्देश",
       "wake_instructions_too_long": "अधिकतम {{max}} वर्ण दर्ज करें।",
       "wakes": "जगाने की संख्या: {{count}}",
@@ -10244,7 +10269,20 @@
       "board_update_failed": "बोर्ड अपडेट विफल",
       "open_crew_members": "क्रू सदस्य",
       "open_crew_members_desc": "क्रू सदस्य पेज खोलता है — हर सदस्य एक स्थायी एजेंट है, जिसका अपना थ्रेड है।",
-      "open_crew_members_gated_desc": "पहले सेटिंग्स खोलता है, ताकि तुम इस प्रीव्यू को चालू कर सको — चालू करने तक यह पेज उपलब्ध नहीं है।"
+      "open_crew_members_gated_desc": "पहले सेटिंग्स खोलता है, ताकि तुम इस प्रीव्यू को चालू कर सको — चालू करने तक यह पेज उपलब्ध नहीं है।",
+      "remote_sessions_not_shown_in_board_view_one": "{{count}} रिमोट सत्र बोर्ड व्यू में नहीं दिखाया जाता — बोर्ड कॉलम केवल स्थानीय सत्रों को प्रबंधित करते हैं।",
+      "remote_sessions_not_shown_in_board_view_other": "{{count}} रिमोट सत्र बोर्ड व्यू में नहीं दिखाए जाते — बोर्ड कॉलम केवल स्थानीय सत्रों को प्रबंधित करते हैं।",
+      "sessions_from_instance_unavailable": "{{names}} के सत्र इस समय अनुपलब्ध हैं।",
+      "checking_remote_instances": "रिमोट इंस्टैंस जाँचे जा रहे हैं…",
+      "adopt_failed": "इस सत्र को यहाँ नहीं खोला जा सका।",
+      "adopt_remote_bind_failed": "इस सत्र को खोलने के लिए {{name}} तक नहीं पहुँचा जा सका।",
+      "adopt_target_unknown": "यह सत्र अब {{name}} पर खुला नहीं है।",
+      "not_open_here_yet": "{{name}} पर — यहाँ खोलने के लिए क्लिक करें",
+      "on_instance": "{{name}} पर",
+      "opening_session_locally": "इस सत्र को यहाँ खोला जा रहा है…",
+      "opens_here_runs_on_instance": "इस सत्र को यहाँ खोलता है — इसका निष्पादन {{name}} पर चलता रहता है",
+      "opens_on_crew_switches_there": "{{name}} पर खुलता है — उस Crew पर स्विच करता है, यहाँ नहीं",
+      "remote_instances_list_unavailable": "रिमोट इंस्टैंस सूचीबद्ध नहीं किए जा सके, इसलिए उनके सत्र नहीं दिखाए गए हैं।"
     },
     "connectionsPage": {
       "action_failed": "कार्रवाई विफल: {{error}}",
@@ -10626,6 +10664,8 @@
         "inbound_webhook_tokens_registered_contexts_and_r": "इनबाउंड वेबहुक टोकन, पंजीकृत संदर्भ और रन इतिहास. API काम करता है, पेज अभी पूरा नहीं हुआ है.",
         "open_webhooks": "वेबहुक खोलें",
         "webhooks": "वेबहुक",
+        "remote_instance_sessions": "रिमोट इंस्टैंस के सत्र",
+        "merge_a_connected_remote_instances_live_sessions": "किसी कनेक्टेड रिमोट इंस्टैंस के सक्रिय सत्रों को सत्र सूची में मिला देता है, और हर एक पर सर्वर बैज दिखाता है। यह काम करता है, लेकिन अभी पूरा नहीं हुआ है।",
         "intro": {
           "webhooks_summary": "कोई दूसरा सिस्टम (CI, रिव्यू बॉट, डिप्लॉय पाइपलाइन) Webhooks पेज पर बनाए गए access token के साथ एक मैसेज भेजकर तुम्हारी जगह एजेंट चला सकता है।",
           "webhooks_where": "इसे चालू करने पर सेटिंग्स में इस कार्ड पर “Webhooks खोलो” लिंक दिखता है; नया Webhooks पेज वहीं से खुलता है। पेज पूरा होने तक यह साइडबार में नहीं दिखता। इसे बंद करने पर पेज बस फिर छिप जाता है; तुम्हारे बनाए token बने रहते हैं।",
@@ -11932,6 +11972,7 @@
         "no_matching_entries": "कोई मेल खाती एंट्री नहीं",
         "no_semantic_entries": "कोई सिमेंटिक एंट्री नहीं",
         "of": "में से",
+        "open_embedding_model_settings": "एम्बेडिंग मॉडल सेटिंग खोलें",
         "preview": "पूर्वावलोकन",
         "preview_what_gets_injected_into_prompts_enter_a": "प्रॉम्प्ट में क्या डाला जाता है, उसका प्रीव्यू देखें। एपिसोडिक रिट्रीवल के नतीजे देखने के लिए क्वेरी दर्ज करें।",
         "ready": "तैयार!",
@@ -12879,6 +12920,13 @@
         "default_auto": "डिफ़ॉल्ट (ऑटो)",
         "default_defers_to_your_agent_config_and_then_to": "अपना कॉन्फ़िगर किया गया मॉडल रखने वाले एजेंट इस सेटिंग को अनदेखा करते हैं। 'डिफ़ॉल्ट' एजेंट कॉन्फ़िगरेशन का मॉडल इस्तेमाल करता है, या कोई मॉडल कॉन्फ़िगर न होने पर सिस्टम डिफ़ॉल्ट का। इसे बदलने से पहले से खुले सेशन प्रभावित नहीं होते।",
         "default_model": "डिफ़ॉल्ट मॉडल",
+        "auto_always_visible": "चैट मॉडल चयनकर्ताओं में हमेशा दिखाई देता है",
+        "failed_to_save_selectable_models": "चुनने योग्य मॉडल सहेजे नहीं जा सके",
+        "model_picker_all_models": "सभी मॉडल ({{count}})",
+        "model_picker_selected_models": "{{selected}} / {{total}} चुने गए",
+        "search_models": "मॉडल खोजें…",
+        "selectable_models": "चुनने योग्य मॉडल",
+        "selectable_models_description": "चुनें कि चैट मॉडल चयनकर्ताओं में कौन से उपलब्ध मॉडल दिखें। Auto और सक्रिय सत्र का मॉडल हमेशा दिखाई देंगे।",
         "default_normal_length": "डिफ़ॉल्ट — सामान्य लंबाई",
         "default_reasoning_effort": "डिफ़ॉल्ट रीज़निंग प्रयास",
         "default_to_autopilot_mode": "डिफ़ॉल्ट रूप से ऑटोपायलट मोड रखें",
@@ -14717,6 +14765,10 @@
       "plainDiff": {
         "description": "अंतर को सिंटैक्स हाइलाइटिंग के बिना सामान्य unified diff टेक्स्ट के रूप में दिखाएँ। बड़े diff में कम मेमोरी लगती है।",
         "label": "सादा diff"
+      },
+      "diffLayout": {
+        "description": "पुराने और नए कोड को दो कॉलम में दिखाता है; बंद होने पर एक यूनिफाइड कॉलम में। इसे यहाँ या किसी भी diff पर बदलने से हर जगह लागू हो जाता है।",
+        "label": "स्प्लिट (अगल-बगल) diff"
       }
     },
     "display": {
@@ -14854,6 +14906,10 @@
   },
   "store": {
     "chatSlice": {
+      "session_gone_open_failed": "जिस सत्र पर क्लिक किया गया, वह हटा दिया गया है और खोला नहीं जा सकता।",
+      "session_open_error_named": "“{{name}}” खोला नहीं जा सका।",
+      "session_open_error": "सत्र खोला नहीं जा सका।",
+      "session_gone_open_failed_named": "“{{name}}” हटा दिया गया है, इसलिए इसे खोला नहीं जा सकता।",
       "truncated": "…(छोटा किया गया)"
     }
   },

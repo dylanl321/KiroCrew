@@ -93,6 +93,14 @@ with no row here.
      - driver-internal (whether ``$HOME`` is relocated onto the pod tree)
    * - ``ACP_BACKENDS_ACP_RUNTIME``
      - pre-session registry query (which start path a session takes)
+   * - ``acp_runtime_backends()``
+     - pre-session registry query (the same question as the row above, with the
+       ``KIROCREW_CODEX_ACP_RUNTIME`` preview switch applied). The FOREGROUND
+       start path reads this; the background ``_bg`` path reads the set above on
+       purpose, so a preview never reaches high-churn handles. A function rather
+       than a set for the reason
+       ``backends_retired_by_host_logout()`` is one: the answer is derived, and
+       ``ACP_BACKENDS_*`` is reserved for vocabulary
    * - ``host_auth.backends_retired_by_host_logout()``
      - pre-session registry query (whether a kiro-cli logout retires the child).
        Declared per harness in :mod:`kiro_crew.agent_sdk.host_auth`, not here, and a
@@ -135,6 +143,8 @@ from __future__ import annotations
 import logging
 from enum import Enum
 from typing import FrozenSet, Set
+
+from kiro_crew.constants import env_flag_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -194,14 +204,25 @@ ACP_BACKENDS_KNOWN: FrozenSet[str] = frozenset(
 #: spec belongs here, and the next such harness should join the set rather than
 #: add a second branch at the call site (harness-parity H6).
 #
-# OpenCode is NOT a member, and the reason is its own advertisement rather than a
-# guess: its ``initialize`` result carries ``mcpCapabilities: {"http": true, "sse":
-# true}`` and no stdio capability, so the stdio servers Crew would put in the array
-# are servers it cannot mount. It reads its MCP servers from its own config file
-# instead, which is a channel this array does not reach. An opencode session is
-# therefore a plain chat with none of Crew's tools; ``providers/mirrors`` records
-# why no projection exists for it.
-ACP_BACKENDS_SESSION_MCP_ARRAY: FrozenSet[str] = frozenset({ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX})
+# opencode is the third member, and it is here because the reason it was EXCLUDED
+# was wrong rather than because anything about the harness changed. That reason read
+# its ``initialize`` result -- ``mcpCapabilities: {"http": true, "sse": true}`` --
+# as an advertisement carrying "no stdio", and concluded the array could not mount
+# the stdio servers Crew puts in it. ACP's ``McpCapabilities`` schema has exactly
+# two boolean fields, ``http`` and ``sse``, and NO stdio field, so a conforming
+# agent cannot advertise stdio at all and that answer is what full support looks
+# like. Absence of a flag that cannot exist is not evidence. Driven against
+# opencode 1.18.30, the element ``acp.session_mcp.acp_server_element`` already
+# emits is accepted, the named child is spawned, its tools are listed and the
+# element's ``env`` reaches it -- so the excluded harness had in fact been serving
+# sessions with none of Crew's own tools for no reason at all. The exclusion also
+# contradicted the shipped code it sat beside: the shared gateway's broker stubs
+# are stdio elements too (``mcp_gateway.session_servers._acp_server_entry``) and
+# ``_pooled_mcp_servers`` appended them to this very array for opencode whenever
+# pooling was on. See ``providers/mirrors/opencode.py``.
+ACP_BACKENDS_SESSION_MCP_ARRAY: FrozenSet[str] = frozenset(
+    {ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX, ACP_BACKEND_OPENCODE}
+)
 
 # Private member tools must execute inside the owned sandbox. A backend joins
 # only after its direct MCP launch path is verified; selectability grants none
@@ -494,14 +515,32 @@ ACP_BACKENDS_SESSION_SHARING = frozenset({ACP_BACKEND_KIRO})
 # then a codex member session stays plain chat — the dispatch tools are simply not
 # mounted, never mounted-and-refused.
 #
-# opencode is excluded on the evidence in ``ACP_BACKENDS_SESSION_MCP_ARRAY``: it
-# advertises http and sse MCP transports only, so there is no per-session mount for
-# a member dispatch to ride on.
+# opencode is excluded, but NOT any longer for want of a mount: it is a member of
+# ``ACP_BACKENDS_SESSION_MCP_ARRAY`` and its sessions now carry Crew's control
+# plane, so the transport a member dispatch would ride on exists. What is missing is
+# the same DECISION codex is waiting on -- mounting session control into a member DM
+# thread is a new capability, separate from giving a session the tools its own agent
+# spec declares. Until that is taken, an opencode member session stays plain chat:
+# the dispatch tools are simply not mounted, never mounted-and-refused.
 ACP_BACKENDS_MEMBER_DISPATCH = frozenset({ACP_BACKEND_CLAUDE, ACP_BACKEND_KAS})
 
-# Backends implementing the ``_session/steer`` extension (mid-turn steer). Neither
-# claude-agent-acp nor codex-acp implements it, so a steer sent to either would be
-# answered with method-not-found rather than reaching the turn.
+# Backends implementing the ``_session/steer`` extension (mid-turn steer).
+# claude-agent-acp does not implement it, so a steer sent there is answered with
+# method-not-found rather than reaching the turn.
+# codex-acp (1.11.0) has a steering channel, but not this one and not usable for
+# what membership buys. Measured against a real adapter: it is a different method
+# (``_session/steering``, ``{sessionId, prompt: [ContentBlock]}``, answered with
+# ``{outcome: injected|startedNewTurn|failed}``, advertised as
+# ``initialize._meta.steering.supported``) with no ``steering_consumed`` echo --
+# and the one thing membership is for, handing a deny reason to the model INSIDE
+# the turn that was denied, cannot happen on codex at all: its command approval
+# advertises ``cancel`` as the ONLY reject option (no ``decline``), and answering
+# it aborts the turn with ``stopReason: "cancelled"`` before the model is called
+# again. A steer injected while the permission request is pending returns
+# ``injected`` and is then discarded with the turn. So codex stays a non-member
+# and takes the refusal-recovery continuation (see
+# ``dashboard.state.should_queue_refusal_recovery``), which is the only channel
+# that reaches its model.
 # opencode is not a member either: its ``initialize`` result advertises
 # ``sessionCapabilities`` of close, fork, list and resume, and nothing else.
 ACP_BACKENDS_STEER = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS})
@@ -613,6 +652,80 @@ ACP_BACKENDS_POD_HOME_REMAP = frozenset({ACP_BACKEND_KIRO})
 # opencode is not a member: it is spawned per session and reads none of the
 # kiro-family cli.json overlay, so it takes the AcpClient path.
 ACP_BACKENDS_ACP_RUNTIME = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS})
+
+# ── The preview switch: codex-acp on AcpRuntime ──
+#
+# ``ENV_CODEX_ACP_RUNTIME`` is the ONE thing that moves codex-acp from AcpClient
+# onto AcpRuntime, and it is OFF unless an operator sets it. With it unset this
+# build behaves exactly as the frozenset above says: the FOREGROUND start path asks
+# "is this backend on the shared runtime?" through :func:`acp_runtime_backends`,
+# which with the switch unset returns that frozenset verbatim, so a codex session
+# still gets its own AcpClient process. The background ``_bg`` path does not ask
+# through this function at all -- ``session._bg_runtime_backends`` reads the
+# frozenset directly, so the switch cannot reach it even when it is on. Its reason
+# is in ``session.py`` beside that reader: codex's teardown verb ends a turn without
+# evicting the session, and background handles churn at a rate the user never
+# controls.
+#
+# Why a switch rather than a member. The frozenset above is the SHIPPED answer,
+# and adding codex to it IS the product change. That change is worth its own
+# commit -- one line, reviewed on its own, reverted on its own -- rather than
+# being folded into the commit that writes the harness. So the harness lands
+# first, dark, with a switch that exercises it; then the member lands and this
+# switch is deleted. Deleting it is the whole flip: nothing else moves.
+#
+# Why an env read rather than a second registry. ``register_selectable_backend``
+# exists because an EDITION must be able to add a harness this build has never
+# heard of. Nothing of the kind is happening here -- codex is already known and
+# already selectable, and the only open question is which transport it takes --
+# so a registry would be a mutable global that one caller writes once. An env read
+# holds no state, is re-read per call so a test can turn it on around a single
+# assertion, and cannot be aimed at a harness other than codex.
+ENV_CODEX_ACP_RUNTIME = "KIROCREW_CODEX_ACP_RUNTIME"
+
+
+def codex_runs_on_acp_runtime() -> bool:
+    """Whether the codex-on-AcpRuntime preview switch is on. Default ``False``.
+
+    Read per call and never cached at import, for the same reason
+    :func:`kiro_crew.session._bg_runtime_backends` is computed per call: the
+    gateway sets its environment before it spawns anything and a test sets the
+    variable around one assertion, so a value frozen at import answers for
+    whichever of the two happened to run first.
+
+    The truthy set is spelled out by :data:`kiro_crew.constants.ENV_TRUTHY` and read
+    through :func:`kiro_crew.constants.env_flag_enabled`, which exists for exactly
+    this footgun: an operator who exports ``=0`` or ``=false`` to keep a preview OFF
+    must not get it on, and a bare ``bool()`` would give it to them silently, since
+    the session starts either way and only the transport differs. ``constants`` is
+    stdlib-only, so reading it here keeps this module's leaf property (see the
+    module docstring) -- the forbidden edges are ``kiro_crew.config``,
+    ``kiro_crew.platform`` and ``kiro_crew.acp``.
+    """
+    return env_flag_enabled(ENV_CODEX_ACP_RUNTIME)
+
+
+def acp_runtime_backends() -> FrozenSet[str]:
+    """Backends served by AcpRuntime in THIS process, preview switch included.
+
+    The one home the switch has: every FOREGROUND site asking "is this backend on
+    the shared runtime?" reads this instead of the environment. Equal to
+    ``ACP_BACKENDS_ACP_RUNTIME`` whenever the switch is off, which is the default.
+
+    Not every reader of that question. ``session._bg_runtime_backends`` reads the
+    frozenset directly, deliberately, so the switch is scoped to the foreground —
+    its reason lives beside that reader. A site that wants the switch reads here; a
+    site the switch must not reach reads the set and says why.
+
+    A function rather than a set for the reason the module docstring gives for
+    ``host_auth.backends_retired_by_host_logout()``: this is a DERIVED answer, not
+    vocabulary, and the harness-parity gate reserves the ``ACP_BACKENDS_*``
+    spelling for vocabulary.
+    """
+    if codex_runs_on_acp_runtime():
+        return ACP_BACKENDS_ACP_RUNTIME | {ACP_BACKEND_CODEX}
+    return ACP_BACKENDS_ACP_RUNTIME
+
 
 # ``ACP_BACKENDS_KIRO_IDENTITY_STORE`` is gone, and it has no replacement HERE.
 # Whether a ``kiro-cli logout`` may retire a running child is a fact about how the
@@ -769,8 +882,10 @@ ACP_BACKENDS_KIRO_SLASH_COMMANDS = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS}
 # describes its running set for a watcher to reconcile against. claude-agent-acp
 # reads no agent file at all (``ACP_BACKENDS_SESSION_MCP_ARRAY``), and codex-acp
 # has not demonstrated the capability — neither inherits it.
-# opencode is not a member: nothing in Crew's agent tree describes its running MCP
-# set, so there is no file a watcher could reconcile a running session against.
+# opencode is not a member either, and its reason is unchanged by the mirror: its
+# MCP set now comes from the ``session/new`` array, resolved per spawn, so there is
+# still no file on disk a watcher could reconcile a RUNNING session against. A
+# change takes effect on the next session, as it does for every array backend.
 ACP_BACKENDS_MCP_CONFIG_HOT_RELOAD = frozenset({ACP_BACKEND_KIRO})
 
 # Backends on which a Side Chat turn may EXECUTE read-only tools under

@@ -700,10 +700,9 @@ BENIGN_SPAWNS: frozenset[str] = frozenset(
         # NOT subprocess spawns: the AST heuristic matches ``asyncio.run`` (attr
         # ``run`` on base ``asyncio``). These four TEST functions drive Code Review
         # Sage's ``_save_runs`` coroutine to completion without a running loop --
-        # the registry write is a coroutine because its owner-only lockdown spawns
-        # ``icacls`` on Windows and so must be offloaded off the event loop (that
-        # real spawn is ``platform_compat.py::restrict_to_owner``, allowlisted
-        # below). No child process is created here and nothing is
+        # the registry write is a coroutine because it is blocking file IO that
+        # must be offloaded off the event loop (see the offload rationale on
+        # ``_write_runs``). No child process is created here and nothing is
         # agent-influenced: every run record in these tests is a literal dict.
         # Same classification as the other ``asyncio.run`` sites in this list.
         "apps/builtins/code_review_sage/tests/test_backend_routes.py"
@@ -1325,18 +1324,20 @@ BENIGN_SPAWNS: frozenset[str] = frozenset(
         # Must NOT be sandboxed: the answer is about the real checkout's own
         # metadata.
         "platform/update_capability.py::_git_toplevel",
-        # Feed-manifest signature verification gating the forced-update floor.
+        # Signature verification for both signed documents: the feed manifest
+        # gating the forced-update floor, and the feature-video manifest. Both
+        # verifiers share this one helper, which is where the spawn lives.
         # One fixed argv (`openssl dgst -sha256 -verify …`) whose binary comes
         # from platform_compat.trusted_system_bin (a vetted absolute path,
         # never PATH — asserted by test_feed_trust's PATH-shim test), no
-        # shell, a 10s timeout, and no cwd. The untrusted manifest bytes
-        # travel as FILE CONTENT inside a private TemporaryDirectory; the
-        # three path arguments are that directory's own literals, so nothing
+        # shell, a 10s timeout, and no cwd. The untrusted document bytes travel
+        # as FILE CONTENT inside a private TemporaryDirectory; the three path
+        # arguments are that directory's own absolute literals, so nothing
         # agent- or network-influenced ever reaches argv. Must NOT be
         # sandboxed: the spawn's whole purpose is to REJECT tampered input,
         # and every failure (openssl missing included) already fails safe to
         # "no floor".
-        "platform/feed_trust.py::verify_manifest_signature",
+        "platform/feed_trust.py::_verify_signature",
         "mcp_shared.py::_get_ppid",
         # File-manager launchers for the dashboard's reveal action. The
         # command is an absolute literal resolved in this module (never a bare

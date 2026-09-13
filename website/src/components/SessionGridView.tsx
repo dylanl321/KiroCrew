@@ -4,9 +4,10 @@ import { X, Plus, GitFork, Loader2, Circle } from 'lucide-react'
 import { SplitGlyph } from './SplitGlyph'
 import { api } from '../api/client'
 import SessionGridLayout from './SessionGridLayout'
-import ChatPane from './ChatPane'
+import ChatPane, { type PaneLeading } from './ChatPane'
 import { useSessionGrid, type GridLeaf } from '../hooks/useSessionGrid'
 import { emitSlotFocused } from '../hooks/useWebSocket'
+import PaneDim from './PaneDim'
 
 import { i18nT } from '../i18n/t'
 type Slot = {
@@ -40,6 +41,7 @@ export default function SessionGridView({
   onCollapse,
   seedSlot,
   openSideChat,
+  leading,
 }: {
   /** Leave split mode entirely (everything closed, or a lone empty placeholder). */
   onClose: () => void
@@ -51,6 +53,10 @@ export default function SessionGridView({
    *  selection toolbar's Ask needs. The grid owns no Side Chat of its own
    *  (the host's activity panel does), so without it panes offer Quote only. */
   openSideChat?: (slot: string) => boolean | void | Promise<boolean | void>
+  /** The host's sessions-sidebar toggle lives at the surface's top-left. The
+   *  geometric top-left pane either reserves its column (`inset`, desktop) or
+   *  renders it inline (`control`, mobile) — see ChatPane's `leading`. */
+  leading?: PaneLeading
 }) {
   const grid = useSessionGrid(seedSlot)
 
@@ -130,7 +136,8 @@ export default function SessionGridView({
       : grid.leaves.find((l) => l.kind === 'session' && l.slot)?.slot
   const forkSourceTitle = slots.find((s) => s.key === forkSourceSlot)?.title
 
-  const renderLeaf = (leaf: GridLeaf) => {
+  const renderLeaf = (leaf: GridLeaf, ownsTopRight: boolean, ownsTopLeft: boolean) => {
+    const paneLeading = ownsTopLeft ? leading : undefined
     if (leaf.kind === 'session' && leaf.slot) {
       return (
         <ChatPane
@@ -142,13 +149,15 @@ export default function SessionGridView({
           onSplitDown={() => grid.splitLeaf(leaf.id, 'down')}
           onOpenFull={onCollapse}
           openSideChat={openSideChat}
+          hostsPanelControls={ownsTopRight}
+          leading={paneLeading}
         />
       )
     }
     if (leaf.kind === 'terminal') {
       // Phase 2 — terminal panes (xterm/PTY) not wired yet.
       return (
-        <div className="h-full flex items-center justify-center text-muted text-[12px] border border-border rounded-lg m-1">
+        <div className="h-full flex items-center justify-center text-muted text-[12px]">
           {i18nT('components.sessionGridView.terminal_pane_coming_in_phase_2')}
         </div>
       )
@@ -165,17 +174,19 @@ export default function SessionGridView({
         onCancel={() => grid.closeLeaf(leaf.id)}
         onSplitRight={() => grid.splitLeaf(leaf.id, 'right')}
         onSplitDown={() => grid.splitLeaf(leaf.id, 'down')}
+        hostsPanelControls={ownsTopRight}
+        leading={paneLeading}
       />
     )
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-bg">
+    <div data-session-grid-view className="flex flex-col flex-1 min-h-0 bg-bg">
       {/* No app chrome — the split tree IS the chat surface. Per-pane headers carry
           the split/close controls; closing down to one session returns to native
           single chat (onCollapse). */}
       {grid.tree ? (
-        <div className="flex-1 min-h-0 p-0.5">
+        <div className="flex-1 min-h-0">
           <SessionGridLayout node={grid.tree} renderLeaf={renderLeaf} onResize={grid.resize} />
         </div>
       ) : (
@@ -196,6 +207,8 @@ function PlaceholderPane({
   onCancel,
   onSplitRight,
   onSplitDown,
+  hostsPanelControls,
+  leading,
 }: {
   slots: Slot[]
   occupied: string[]
@@ -207,6 +220,8 @@ function PlaceholderPane({
   onCancel: () => void
   onSplitRight: () => void
   onSplitDown: () => void
+  hostsPanelControls: boolean
+  leading?: PaneLeading
 }) {
   const [search, setSearch] = useState('')
   const queryClient = useQueryClient()
@@ -247,31 +262,40 @@ function PlaceholderPane({
   return (
     <div
       onMouseDownCapture={onFocus}
-      className={`flex flex-col h-full border-[1.5px] border-dashed rounded-lg bg-bg overflow-hidden m-1 ${focused ? 'border-accent' : 'border-border'}`}
+      className="relative flex flex-col h-full bg-bg overflow-hidden"
     >
-      <div className="flex items-center gap-1 p-2 border-b border-border">
+      <div className={`panel-toolbar relative flex items-center gap-2 pr-2 bg-bg shrink-0 transition-[padding-left] duration-[240ms] [transition-timing-function:cubic-bezier(.32,.72,0,1)] ${leading?.inset ? 'pl-[56px]' : 'pl-2'}`}>
+        {leading?.inset && <span aria-hidden="true" data-pane-leading-divider className="absolute left-[48px] top-1/2 -translate-y-1/2 w-px h-5 bg-border" />}
+        {leading?.control}
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-[12px] text-muted">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${focused ? 'bg-accent' : 'bg-muted'}`} />
+          <span className="truncate">{i18nT('components.sessionGridView.search_sessions')}</span>
+        </div>
+        {/* Host attribute on the actions group, as in ChatPane: its reservation
+            stacks on the toolbar's 8px inset instead of replacing it. */}
+        <div data-pane-controls data-panel-controls-host={hostsPanelControls ? 'chat' : undefined} className="panel-toolbar-actions flex items-center shrink-0">
+          <button onClick={onSplitRight} title={i18nT('components.sessionGridView.split_right_d')} aria-label={i18nT('components.sessionGridView.split_right')} className={ctrlBtn}>
+            <SplitGlyph />
+          </button>
+          <button onClick={onSplitDown} title={i18nT('components.sessionGridView.split_down')} aria-label={i18nT('components.sessionGridView.split_down')} className={ctrlBtn}>
+            <SplitGlyph down />
+          </button>
+          <button onClick={onCancel} title={i18nT('components.sessionGridView.close_cell')} aria-label={i18nT('components.sessionGridView.close_cell')} className="shrink-0 p-1 rounded text-muted hover:text-danger hover:bg-danger/10 cursor-pointer bg-transparent border-none transition-colors">
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      {/* After the header so the header stays the first child (tests locate it that way); absolute, so order does not change what paints where. */}
+      <PaneDim dimmed={!focused} />
+      <div className="p-2 border-b border-border">
         <input
           autoFocus={focused}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={i18nT('components.sessionGridView.search_sessions')}
           aria-label={i18nT('components.sessionGridView.search_sessions')}
-          className="flex-1 min-w-0 bg-bg-elevated border border-border rounded px-2 py-1 text-[13px] text-text placeholder:text-muted outline-none focus-visible:border-accent"
+          className="w-full min-w-0 bg-bg-elevated border border-border rounded px-2 py-1 text-[13px] text-text placeholder:text-muted outline-none focus-visible:border-accent"
         />
-        <button onClick={onSplitRight} title={i18nT('components.sessionGridView.split_right_d')} aria-label={i18nT('components.sessionGridView.split_right')} className={ctrlBtn}>
-          <SplitGlyph />
-        </button>
-        <button onClick={onSplitDown} title={i18nT('components.sessionGridView.split_down')} aria-label={i18nT('components.sessionGridView.split_down')} className={ctrlBtn}>
-          <SplitGlyph down />
-        </button>
-        <button
-          onClick={onCancel}
-          title={i18nT('components.sessionGridView.close_cell')}
-          aria-label={i18nT('components.sessionGridView.close_cell')}
-          className="shrink-0 p-1 rounded text-muted hover:text-danger hover:bg-danger/10 cursor-pointer bg-transparent border-none transition-colors"
-        >
-          <X size={14} />
-        </button>
       </div>
 
       {/* Three creation entry points (Terminal arrives in Phase 2). */}
