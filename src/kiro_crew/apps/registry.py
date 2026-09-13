@@ -4342,6 +4342,31 @@ def _restore_moved_aside(
         )
 
 
+def _discard_update_snapshot(snapshot: Path, log_lines: list[str]) -> None:
+    """Retire a staged-update source snapshot after a SUCCESSFUL publish.
+
+    The fresh source is already live at ``pkg_dir``; the snapshot is the previous
+    source, no longer needed. Rename it to a ``.partial-*`` sibling that
+    :func:`_sweep_stale_checkouts` reaps — a cheap O(1) rename, never a recursive
+    delete on the loop thread (same discipline as :func:`_restore_moved_aside`).
+    A failure is non-fatal: the sweep also reaps the ``.stale-*`` name it already
+    carries, so at worst the reclaim is deferred.
+    """
+    if snapshot is None or not snapshot.exists():
+        return
+    discarded = snapshot.with_name(
+        snapshot.name.replace(".stale-", ".partial-", 1)
+        if ".stale-" in snapshot.name
+        else f"{snapshot.name}.partial-{uuid.uuid4().hex[:8]}"
+    )
+    try:
+        snapshot.rename(discarded)
+    except OSError as exc:
+        # Non-fatal: the .stale-* name is already sweeper-owned, so the reclaim is
+        # only deferred, and the published update is unaffected.
+        logger.debug("could not retire update snapshot %s: %s", snapshot.name, exc)
+
+
 async def _refuse_identity_mismatch(
     entry_name: str,
     cloned_name: str,
@@ -6830,6 +6855,10 @@ async def install_from_registry(
     # `outcome["log"]` at the end of `finally` (below) closes that gap instead
     # of the WARNING silently never reaching the log the user sees.
     outcome: dict[str, Any] | None = None
+    # Staged-update source snapshot (set inside the try for an update); hoisted
+    # here so the `finally`'s restore reference is always bound even if the try
+    # raises before the move-aside runs.
+    update_snapshot: Path | None = None
     try:
         # Best-effort sweep of aged .stale-* / .partial-* dirs before the
         # install — prevents unbounded accumulation without blocking.
@@ -6892,6 +6921,34 @@ async def install_from_registry(
                         "code": "update_shutdown_unverified",
                         "retryable": True,
                     }
+
+        # STAGE OUTSIDE THE LIVE TREE (#10144): for an update, snapshot the live
+        # source aside BEFORE the clone/build so the fresh checkout is built on a
+        # clean path and the previous source is never left partially mutated. On
+        # ANY failure the snapshot is restored, so the app stays runnable on its
+        # prior source (R3.3); on success the snapshot is discarded to a
+        # .partial-* sibling the sweeper reaps. `data/` and `.app_secret` live in
+        # the separate apps/ tree (see manager.update_app), not here, so this
+        # source swap does not touch them. Same rule for a local-source update:
+        # both go through this one path. Reuses the cancellation-safe move-aside
+        # / restore primitives so this adds no new teardown semantics.
+        pkg_dir_live = app_source_dir(name)
+        if was_installed and (pkg_dir_live / ".git").is_dir():
+            update_snapshot = await _move_checkout_aside(pkg_dir_live, log_lines)
+            if update_snapshot is None:
+                msg = (
+                    f"refusing to update {name!r}: could not stage its source aside "
+                    "before rebuilding, so the live tree is left untouched — retry"
+                )
+                log_lines.append(msg)
+                return {
+                    "ok": False,
+                    "name": name,
+                    "error": msg,
+                    "code": "update_staging_failed",
+                    "retryable": True,
+                }
+
         build_result = await _clone_build_app(
             owner_designated_target or git_url,
             name,
@@ -6905,6 +6962,17 @@ async def install_from_registry(
             commit=commit,
         )
         if not build_result["ok"]:
+            # The staged update failed: put the previous source back so the app
+            # stays runnable on it (R3.3), rather than leaving the empty/partial
+            # fresh checkout in place. No-op when no snapshot was taken.
+            if update_snapshot is not None:
+                _restore_moved_aside(
+                    update_snapshot,
+                    app_source_dir(name),
+                    log_lines,
+                    "the update build failed",
+                )
+                update_snapshot = None
             # A pre-build refusal (identity/admission gate inside
             # _clone_build_app), a failed clone, or a failed build may have left
             # a non-restorable origin-mismatch checkout moved aside. Retained-stale
@@ -6914,6 +6982,13 @@ async def install_from_registry(
             # needed here.
             outcome = {**build_result}
             return outcome
+
+        # Build succeeded: the fresh source is published at pkg_dir. Discard the
+        # snapshot to a .partial-* sibling the sweeper reaps (cheap O(1) rename,
+        # no recursive delete on the loop thread).
+        if update_snapshot is not None:
+            _discard_update_snapshot(update_snapshot, log_lines)
+            update_snapshot = None
 
         app_source = build_result["pkg_dir"]
         clone_root = app_source
@@ -7448,6 +7523,27 @@ async def install_from_registry(
         # checkout exists AND the transaction did not durably succeed, so the
         # pre-clone exits and the happy path both pass through untouched.
         if not durable_success:
+            # Staged-update snapshot (my move-aside, outside _clone_build_app):
+            # restore it on any non-durable exit the inline paths did not already
+            # handle — an exception or a cancellation between the move-aside and
+            # completion. It is None on the paths that already restored/discarded
+            # it, so this only fires for the interrupted case. Synchronous, like
+            # the restore below (awaiting during cancellation re-enters a closing
+            # loop).
+            if update_snapshot is not None:
+                try:
+                    _restore_moved_aside(
+                        update_snapshot,
+                        app_source_dir(name),
+                        log_lines,
+                        "the update was interrupted",
+                    )
+                except Exception:  # noqa: BLE001 - never mask the outcome
+                    logger.warning(
+                        "could not restore the staged-update snapshot for %r",
+                        name,
+                        exc_info=True,
+                    )
             try:
                 pending = build_result.get("_restorable_stale") or []
                 if pending:

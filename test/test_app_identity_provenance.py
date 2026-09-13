@@ -578,3 +578,75 @@ class TestUpdateVerifiedStopGate:
         result = await registry.install_from_registry("up-app")
 
         assert result["ok"] is True, result.get("error")
+
+
+class TestStagedUpdatePublish:
+    """#10144 R3.3/R3.5: an update snapshots the live SOURCE tree aside before the
+    rebuild, so a failed build restores the previous source (the app stays runnable)
+    and a successful build discards the snapshot. data/ and .app_secret live in the
+    separate apps/ tree (manager.update_app preserves them), not in the source tree
+    swapped here.
+    """
+
+    @pytest.fixture()
+    def live_source(self, tmp_path, monkeypatch):
+        """Point app_source_dir at a tmp path holding a real (marked) .git checkout."""
+        sources = tmp_path / "app-sources"
+        pkg = sources / "up-app"
+        _write_clone(pkg, _manifest("up-app", version="1.0.0"), commit="a" * 40)
+        (pkg / "SENTINEL").write_text("previous-source", encoding="utf-8")
+        monkeypatch.setattr(registry, "app_source_dir", lambda n: sources / n)
+        monkeypatch.setattr(registry, "_app_sources_dir", lambda: sources)
+        # This is an update, and the backend is already down.
+        monkeypatch.setattr(registry, "get_app", lambda n: {"name": "up-app"})
+        entry = {"name": "up-app", "gitUrl": GOOD_URL, "repo": GOOD_URL, "branch": "main"}
+        monkeypatch.setattr(registry, "get_registry_app", lambda n: entry)
+        _patch_prefetch(monkeypatch, _manifest("up-app"))
+        from kiro_crew.apps import backend
+
+        monkeypatch.setattr(backend, "spawned_backend_names", lambda: [])
+        return pkg
+
+    @pytest.mark.asyncio
+    async def test_a_failed_build_restores_the_previous_source(
+        self, live_source, tmp_path, monkeypatch
+    ):
+        pkg = live_source
+
+        async def _failing_clone(git_url, app_name, log_lines, branch="main", **kwargs):
+            # The live tree must already have been moved aside by the wrapper.
+            assert not (pkg / "SENTINEL").exists(), "live source was not staged aside"
+            return {"ok": False, "name": app_name, "error": "build blew up"}
+
+        monkeypatch.setattr(registry, "_clone_build_app", _failing_clone)
+
+        result = await registry.install_from_registry("up-app")
+
+        assert result["ok"] is False
+        # The previous source is restored at the live path, runnable as before.
+        assert (pkg / "SENTINEL").read_text(encoding="utf-8") == "previous-source"
+
+    @pytest.mark.asyncio
+    async def test_a_successful_update_discards_the_snapshot(
+        self, live_source, tmp_path, monkeypatch
+    ):
+        pkg = live_source
+        reached: list[str] = []
+
+        async def _ok_clone(git_url, app_name, log_lines, branch="main", **kwargs):
+            reached.append(app_name)
+            assert not (pkg / "SENTINEL").exists(), "live source was not staged aside"
+            # Materialize the fresh source at the (now-empty) live path.
+            _write_clone(pkg, _manifest("up-app", version="2.0.0"))
+            return {"ok": True, "pkg_dir": pkg}
+
+        monkeypatch.setattr(registry, "_clone_build_app", _ok_clone)
+
+        await registry.install_from_registry("up-app")
+
+        assert reached == ["up-app"], "the staged update must reach the clone/build"
+        # The fresh source is live; no leftover .stale-* snapshot remains.
+        siblings = [p.name for p in pkg.parent.iterdir()]
+        assert not any(
+            ".stale-" in s for s in siblings
+        ), f"a successful update must not leave a .stale-* snapshot: {siblings}"
