@@ -6602,6 +6602,155 @@ def apply_job_limits(pid: int, *, max_procs: int, max_memory_bytes: int) -> bool
                     logger.debug("CloseHandle failed", exc_info=True)
 
 
+# JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE — the LIFETIME flag that `apply_job_limits`
+# deliberately omits. Here it is the whole point: a job carrying it terminates
+# every process still assigned to it the instant the LAST handle to the job
+# closes. `own_process_tree` therefore RETURNS the open handle instead of closing
+# it, and the caller must hold it for as long as the backend should live; closing
+# it (on stop, or on gateway exit) is what reaps the tree — including a descendant
+# whose launcher already exited, which a live-tree `taskkill /T` walk cannot see.
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+
+def own_process_tree(pid: int) -> object | None:
+    """Bind *pid* and its descendants to a Crew-owned, kill-on-close Job object.
+
+    The Windows half of app-backend process-tree OWNERSHIP (distinct from
+    :func:`apply_job_limits`, which is a resource CEILING and intentionally does
+    not affect lifetime). The returned handle is the tree's lifeline: while it is
+    open the backend and every descendant run; closing it terminates the whole
+    job. The caller stores it on the backend record and closes it in the stop
+    path, so an orphaned descendant — one whose launcher exited and thus left the
+    live process tree — is still reaped, which a `taskkill /T` of the live tree
+    cannot guarantee.
+
+    Race-free ONLY when paired with :data:`CREATE_SUSPENDED`, exactly as
+    :func:`apply_job_limits` documents: assign the suspended child (no
+    descendants yet, none can escape), then :func:`resume_process_main_thread`.
+
+    Returns the OPEN job handle on success — the caller OWNS it and MUST close it
+    to reap the tree (a leak here keeps a finished app's job alive). Returns
+    ``None`` — never raises — on POSIX (where the process group owns the tree via
+    ``start_new_session``), on a non-positive pid, or on any Win32 failure; the
+    caller treats ``None`` as "no OS-level tree ownership" and falls back to the
+    process-group + taskkill path, exactly as it treats an unavailable ceiling.
+    """
+    if IS_POSIX:
+        return None
+    if pid <= 0:
+        return None
+    job = None
+    proc_handle = None
+    kernel32 = None
+    ok = False
+    # pragma: no cover — Windows-only ctypes plumbing, unmeasurable on the
+    # coverage-measuring Ubuntu shards (same rationale as apply_job_limits).
+    try:  # pragma: no cover
+        _PROCESS_SET_QUOTA = 0x0100  # noqa: N806 — Windows API constant
+        _PROCESS_TERMINATE = 0x0001  # noqa: N806 — AssignProcessToJobObject needs it
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+        ]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        # Anonymous job (NULL name): nothing else can open it by name.
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            logger.warning(
+                "SECURITY: CreateJobObject (kill-on-close) failed (err=%s); app-backend "
+                "tree ownership NOT enforced for pid %d",
+                _windows_last_error(),
+                pid,
+            )
+            return None
+
+        info = _JobObjectExtendedLimitInformation()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(
+            job,
+            _JOBOBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        ):
+            logger.warning(
+                "SECURITY: SetInformationJobObject (kill-on-close) failed (err=%s); tree "
+                "ownership NOT enforced for pid %d",
+                _windows_last_error(),
+                pid,
+            )
+            return None
+
+        proc_handle = kernel32.OpenProcess(_PROCESS_SET_QUOTA | _PROCESS_TERMINATE, False, pid)
+        if not proc_handle:
+            logger.warning(
+                "SECURITY: OpenProcess(SET_QUOTA|TERMINATE) failed for pid %d (err=%s); "
+                "tree ownership NOT enforced",
+                pid,
+                _windows_last_error(),
+            )
+            return None
+        if not kernel32.AssignProcessToJobObject(job, proc_handle):
+            logger.warning(
+                "SECURITY: AssignProcessToJobObject (kill-on-close) failed for pid %d "
+                "(err=%s); tree ownership NOT enforced",
+                pid,
+                _windows_last_error(),
+            )
+            return None
+        logger.info("App-backend tree ownership job assigned to pid %d", pid)
+        ok = True
+        return job
+    except Exception:
+        logger.warning("own_process_tree failed for pid %s", pid, exc_info=True)
+        return None
+    finally:
+        # The process handle is never needed after assignment, so close it always.
+        # The JOB handle is the caller's lifeline: close it here ONLY when the
+        # assignment did not fully succeed (else closing a KILL_ON_JOB_CLOSE job
+        # would immediately kill the backend we just started).
+        if proc_handle and kernel32 is not None:
+            try:
+                kernel32.CloseHandle(proc_handle)
+            except Exception:
+                logger.debug("CloseHandle(proc_handle) failed", exc_info=True)
+        if not ok and job and kernel32 is not None:
+            try:
+                kernel32.CloseHandle(job)
+            except Exception:
+                logger.debug("CloseHandle(job) failed", exc_info=True)
+
+
+def close_owned_tree(handle: object | None) -> None:
+    """Close a job handle from :func:`own_process_tree`, reaping the tree.
+
+    Because the job carries ``KILL_ON_JOB_CLOSE``, closing the last handle
+    terminates every process still assigned to it — the authoritative stop that
+    catches a descendant a live-tree ``taskkill`` missed. No-op on POSIX or for a
+    ``None`` handle. Never raises: a stop path must not fail on a close error.
+    """
+    if IS_POSIX or handle is None:
+        return
+    try:  # pragma: no cover — Windows-only
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle(handle)
+    except Exception:
+        logger.debug("close_owned_tree: CloseHandle failed", exc_info=True)
+
+
 _TH32CS_SNAPTHREAD = 0x00000004
 _THREAD_SUSPEND_RESUME = 0x0002
 _INVALID_HANDLE_VALUE = -1
