@@ -967,31 +967,64 @@ class TestCandidateSetReplacesEquivalentSeedRows:
         assert len(candidates) == 2, "a different repo's row is an addition, not a replacement"
 
 
-class TestCatalogFailureBlocksExternalFallbackToo:
-    """A catalog-only app has no seed row, so the old refusal (which required one)
-    let a same-named external registry answer for it."""
+class TestCatalogFailureAllowsNonCollidingExternalFallback:
+    """Under a catalog outage, an owner-configured external app that collides with
+    no bundled/official name is the owner's own catalog — which the listing path
+    already surfaces under the same outage — so install must reach it rather than
+    fail closed. A name that DOES collide with a bundled/official name stays
+    fail-closed: app trust is keyed by name, so resolving a colliding name from
+    another source could install a different repository under an official name.
+    """
 
-    def _no_seed(self, monkeypatch):
-        monkeypatch.setattr(reg, "_load_registry_file", lambda: [])
+    def _catalog_down(self, monkeypatch, *, seed_names: list[str]):
+        seeds = [{"name": n, "gitUrl": URL, "repo": URL, "branch": "main"} for n in seed_names]
+        monkeypatch.setattr(reg, "_load_registry_file", lambda: seeds)
+        # A CDN outage: fetch_document yields None, so inventory_for_install raises.
         monkeypatch.setattr(reg.official_catalog, "fetch_document", lambda url: None)
+
+    def test_a_non_colliding_external_row_resolves_while_the_catalog_is_unreachable(
+        self, monkeypatch
+    ):
+        self._catalog_down(monkeypatch, seed_names=[])
         monkeypatch.setattr(
             reg,
-            "_read_external_registry_cache",
-            lambda *a, **k: [{"name": "dup", "gitUrl": "https://evil.example/x", "repo": "e/x"}],
+            "_external_registry_row",
+            lambda n: {"name": n, "gitUrl": "https://ext.example/x", "_registry": "ext"},
         )
+        row, reason = reg._resolve_registry_row("private-app")
+        assert reason == "", "a non-colliding configured external app must proceed under outage"
+        assert row is not None and row.get("_registry") == "ext"
 
-    def test_an_external_row_may_not_answer_while_the_catalog_is_unreachable(self, monkeypatch):
-        self._no_seed(monkeypatch)
+    def test_a_seed_colliding_name_still_refuses_while_the_catalog_is_unreachable(
+        self, monkeypatch
+    ):
+        self._catalog_down(monkeypatch, seed_names=["dup"])
+        # Even if an external registry offers the same name, the collision wins.
+        called = {"external": False}
+
+        def _external(n):
+            called["external"] = True
+            return {"name": n, "gitUrl": "https://evil.example/x", "_registry": "ext"}
+
+        monkeypatch.setattr(reg, "_external_registry_row", _external)
         row, reason = reg._resolve_registry_row("dup")
-        assert row is None, "a different source must not stand in for an unconfirmed name"
+        assert row is None, "a bundled/official-colliding name must stay fail-closed"
+        assert "could not be reached" in reason
+        assert (
+            called["external"] is False
+        ), "a colliding name must not even consult the external source"
+
+    def test_no_external_offer_still_refuses_while_the_catalog_is_unreachable(self, monkeypatch):
+        """No configured external registry offers the name → nothing to fall back to."""
+        self._catalog_down(monkeypatch, seed_names=[])
+        monkeypatch.setattr(reg, "_external_registry_row", lambda n: None)
+        row, reason = reg._resolve_registry_row("unknown-app")
+        assert row is None
         assert "could not be reached" in reason
 
     def test_the_external_row_still_resolves_when_the_catalog_answers(self, monkeypatch):
-        """Scope: only a FAILED lookup blocks the external path.
-
-        Stubbed at `_external_registry_row` because what changed is whether
-        resolution REACHES that fallback, not how it reads config.
-        """
+        """Scope: catalog-up behavior is unchanged — a valid "no row" still reaches
+        the external fallback exactly as before."""
         monkeypatch.setattr(reg, "_load_registry_file", lambda: [])
         monkeypatch.setattr(
             reg.official_catalog,
