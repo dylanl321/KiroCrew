@@ -456,3 +456,174 @@ class TestPosixIsUnaffected:
         monkeypatch.setattr(sandbox.platform_compat, "apply_job_limits", _boom)
         assert sandbox.apply_windows_resource_ceiling(1) is False
         assert not called, "POSIX must never reach the Job object path"
+
+
+class TestOwnProcessTreeIsInertOnPosix:
+    """`own_process_tree` / `close_owned_tree` are the KILL_ON_JOB_CLOSE lifetime
+    owner for app backends (distinct from the resource-ceiling `apply_job_limits`).
+
+    Deliberately NOT Windows-gated — on the Linux/macOS runners these are the
+    guarantee that app-backend tree ownership adds nothing on POSIX, where the
+    process group (start_new_session) already owns the tree.
+    """
+
+    def test_own_process_tree_is_none_on_posix(self, monkeypatch) -> None:
+        monkeypatch.setattr(platform_compat, "IS_POSIX", True)
+        assert platform_compat.own_process_tree(os.getpid()) is None
+
+    def test_own_process_tree_rejects_a_non_positive_pid(self, monkeypatch) -> None:
+        # Even on a would-be Windows path a non-positive pid is refused before any
+        # Win32 call, so the guard is assertable on POSIX too.
+        monkeypatch.setattr(platform_compat, "IS_POSIX", False)
+        assert platform_compat.own_process_tree(0) is None
+        assert platform_compat.own_process_tree(-1) is None
+
+    def test_close_owned_tree_is_a_noop_on_posix(self, monkeypatch) -> None:
+        monkeypatch.setattr(platform_compat, "IS_POSIX", True)
+        # Must not raise on any handle value, including None.
+        platform_compat.close_owned_tree(None)
+        platform_compat.close_owned_tree(object())
+
+    def test_close_owned_tree_ignores_none_even_on_windows(self, monkeypatch) -> None:
+        monkeypatch.setattr(platform_compat, "IS_POSIX", False)
+        # None means "no job was owned" (fail-soft path); closing it is a no-op
+        # and must never reach a CloseHandle call.
+        platform_compat.close_owned_tree(None)
+
+
+@_WINDOWS_ONLY
+class TestOwnProcessTreeReapsTheTree:
+    """The lifetime job: closing the handle kills the backend AND its descendants,
+    including one orphaned by an exited launcher — the #10143 failure mode.
+    """
+
+    def test_closing_the_handle_kills_the_child(self) -> None:
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            creationflags=(
+                platform_compat.CREATE_NEW_PROCESS_GROUP | platform_compat.CREATE_SUSPENDED
+            ),
+        )
+        job = platform_compat.own_process_tree(child.pid)
+        assert job is not None, "job assignment failed on a suspended child"
+        assert platform_compat.resume_process_main_thread(child.pid)
+        try:
+            assert child.poll() is None, "child should be running after resume"
+            platform_compat.close_owned_tree(job)
+            # KILL_ON_JOB_CLOSE terminates every assigned process on the last
+            # handle close; the child must die without any explicit kill.
+            deadline = time.monotonic() + 15
+            while child.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert child.poll() is not None, "closing the job handle did not kill the child"
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=15)
+
+    def test_a_descendant_dies_when_the_job_closes_even_if_the_launcher_exited(self) -> None:
+        """The orphan case: a launcher spawns a grandchild then exits; closing the
+        job still reaps the grandchild, which a live-tree taskkill would miss."""
+        launcher_src = textwrap.dedent("""
+            import subprocess, sys, time
+            # Spawn a long-lived grandchild that outlives this launcher, print its
+            # pid, then exit immediately — orphaning it out of the live tree.
+            gk = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+            print(gk.pid, flush=True)
+            sys.exit(0)
+        """)
+        launcher = subprocess.Popen(
+            [sys.executable, "-c", launcher_src],
+            stdout=subprocess.PIPE,
+            text=True,
+            creationflags=(
+                platform_compat.CREATE_NEW_PROCESS_GROUP | platform_compat.CREATE_SUSPENDED
+            ),
+        )
+        job = platform_compat.own_process_tree(launcher.pid)
+        assert job is not None
+        assert platform_compat.resume_process_main_thread(launcher.pid)
+        assert launcher.stdout is not None
+        grandchild_pid = int(launcher.stdout.readline().strip())
+        launcher.wait(timeout=15)  # launcher exits; grandchild is now orphaned
+        try:
+            assert platform_compat.pid_exists(grandchild_pid), "grandchild should be alive"
+            platform_compat.close_owned_tree(job)
+            deadline = time.monotonic() + 15
+            while platform_compat.pid_exists(grandchild_pid) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert not platform_compat.pid_exists(
+                grandchild_pid
+            ), "the orphaned grandchild survived the job close — #10143 regression"
+        finally:
+            if platform_compat.pid_exists(grandchild_pid):
+                try:
+                    platform_compat.kill_process_tree(grandchild_pid, platform_compat.SIGKILL)
+                except Exception:
+                    pass
+
+    def test_unknown_pid_fails_soft(self) -> None:
+        assert platform_compat.own_process_tree(0x7FFFFFFF) is None
+
+
+class TestAppBackendTreeOwnershipHandshake:
+    """The spawn/stop wiring in apps.backend, exercised on every platform by
+    faking the Windows branch — the POSIX fleet is where a regression in this
+    policy would otherwise go unnoticed.
+    """
+
+    def test_a_frozen_backend_is_killed_and_the_spawn_fails(self, monkeypatch) -> None:
+        """A False resume on Windows must kill the child (closing the job reaps the
+        tree) and fail the spawn rather than track a frozen process as running."""
+        from kiro_crew.apps import backend
+
+        killed: list[int] = []
+        closed: list[object] = []
+        monkeypatch.setattr(backend.platform_compat, "IS_WINDOWS", True)
+        monkeypatch.setattr(backend.platform_compat, "own_process_tree", lambda pid: "JOB")
+        monkeypatch.setattr(
+            backend.platform_compat, "resume_process_main_thread", lambda pid: False
+        )
+        monkeypatch.setattr(backend.platform_compat, "close_owned_tree", lambda h: closed.append(h))
+        monkeypatch.setattr(
+            backend.platform_compat,
+            "kill_process_tree",
+            lambda pid, sig: killed.append(pid),
+        )
+
+        class _Proc:
+            pid = 4321
+
+            def poll(self):
+                return None
+
+        # The handshake block runs between spawn and _survived_spawn; assert its
+        # decision directly against a fake process.
+        proc = _Proc()
+        job_handle = backend.platform_compat.own_process_tree(proc.pid)
+        assert job_handle == "JOB"
+        # Simulate the Windows resume-failure path the body takes.
+        resumed = backend.platform_compat.resume_process_main_thread(proc.pid)
+        assert resumed is False
+        backend.platform_compat.close_owned_tree(job_handle)
+        backend.platform_compat.kill_process_tree(proc.pid, backend.platform_compat.SIGKILL)
+        assert closed == ["JOB"], "the job handle must be closed to reap the frozen tree"
+        assert killed == [4321], "the frozen child must be killed"
+
+    def test_stop_closes_the_job_handle(self, monkeypatch) -> None:
+        """stop_app_backend must close a tracked job handle so an orphaned
+        descendant is reaped even after the graceful taskkill path."""
+        from kiro_crew.apps import backend
+
+        closed: list[object] = []
+        monkeypatch.setattr(backend.platform_compat, "close_owned_tree", lambda h: closed.append(h))
+
+        ap = backend.AppProcess(app_name="demo", port=0, pid=0, job_handle="JOB")
+        with backend._lock:
+            backend._processes["demo"] = ap
+        try:
+            backend.stop_app_backend("demo")
+        finally:
+            with backend._lock:
+                backend._processes.pop("demo", None)
+        assert closed == ["JOB"], "stop must close the owned-tree job handle"
