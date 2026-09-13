@@ -3892,12 +3892,26 @@ def _resolve_registry_row(name: str) -> tuple[dict[str, Any] | None, str]:
         return catalog_row, ""
 
     if catalog_failed:
-        # Before ANY fallback, seed or external. Without the catalog we cannot know
-        # whether this name is a catalog app, and app trust is keyed by name: a
-        # same-named external registry row would install a different repository's
-        # code under a name the owner already permitted for execution. The local
-        # cache cannot be consulted to decide -- it is agent-writable, which is the
-        # surface `inventory_for_install` refuses to read in the first place.
+        # The catalog is unreachable, so we cannot ask whether this name is an
+        # official app. App trust is keyed by name, so a name that ALSO belongs
+        # to the bundled seed (the official set) must stay fail-closed: resolving
+        # it from another source could install a different repository's code
+        # under a name the owner permitted for the official one. Officialness is
+        # decided ONLY from the bundled seed here — never from the on-disk
+        # coordinate cache, which is agent-writable and is exactly the surface
+        # `inventory_for_install` refuses to read on the install path.
+        #
+        # But a name the owner configured through an EXTERNAL registry, that
+        # collides with no seed/official name, is not an official app the outage
+        # is hiding — it is the owner's own catalog, which the listing path
+        # already surfaces under the same outage. Resolving it lets a
+        # private-registry install proceed while `apps.crew.kiro.dev` is blocked;
+        # a clone/auth failure then fails for its own reason, not for the outage.
+        if seed_row is None:
+            external_row = _external_registry_row(name)
+            if external_row is not None:
+                return external_row, ""
+        # Colliding name, or no external offer: fail closed as before.
         detail = (
             "is bundled and may carry an official commit pin"
             if seed_row is not None
